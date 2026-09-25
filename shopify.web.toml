@@ -1,6 +1,14 @@
 name = "React Router"
 roles = ["frontend", "backend"]
 webhooks_path = "/webhooks/app/uninstalled"
+
+# Local development runs on SQLite, production on Postgres — see
+# scripts/dev-schema.mjs for why, and note that only these two commands are affected.
+# Production still builds from prisma/schema.prisma via `npm run setup`.
+#
+# `db push` instead of `migrate deploy`: the migrations in prisma/migrations are
+# Postgres SQL and cannot run against SQLite. `db push` builds the database straight
+# from the models, which is all a throwaway local session store needs.
 [commands]
-predev = "npm exec prisma generate"
-dev = "npm exec prisma migrate deploy && npm exec react-router dev"
+predev = "node scripts/dev-schema.mjs && npm exec -- prisma generate --schema prisma/dev/schema.prisma"
+dev = "npm exec -- prisma db push --schema prisma/dev/schema.prisma --skip-generate && npm exec -- react-router dev"

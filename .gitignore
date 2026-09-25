@@ -13,6 +13,11 @@ node_modules
 /prisma/dev.sqlite-journal
 database.sqlite
 
+# Local-only SQLite schema + database, regenerated from prisma/schema.prisma by
+# scripts/dev-schema.mjs on every `shopify app dev`. Never commit it — the committed
+# schema is the Postgres one that production runs.
+/prisma/dev/
+
 .env
 .env.*
 

@@ -15,8 +15,10 @@ const shopify = shopifyApp({
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
-  // Custom distribution: this app installs on a single store, not via the App Store.
-  distribution: AppDistribution.SingleMerchant,
+  // Public distribution. This is also what makes the discount and validation
+  // functions usable at all: functions from a CUSTOM app require the store to be on
+  // Shopify Plus, while public App Store apps work on every plan.
+  distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,
   },

@@ -18,11 +18,9 @@ describe("Default Integration Test", () => {
     functionInfo = await getFunctionInfo(functionDir);
     ({ schemaPath, functionRunnerPath, wasmPath, targeting } = functionInfo);
     schema = await loadSchema(schemaPath);
-    // The scaffold asked for 45s. Compiling this function to Wasm takes about two
-    // and a half minutes from cold here, so the hook always timed out and every
-    // test in the file silently reported as "skipped" — the suite had never once
-    // actually run. A per-hook timeout overrides vitest.config.js, so it has to be
-    // raised here.
+    // Compiling to Wasm takes minutes from cold. The scaffold's 45s default made the
+    // whole suite report as "skipped" without ever running — see the sibling
+    // free-gift-discount extension, where that went unnoticed for a long time.
   }, 300000);
 
   const fixturesDir = path.join(__dirname, "fixtures");

@@ -1,0 +1,8 @@
+query CartInput {
+  cart {
+    lines {
+      quantity
+      giftTier: attribute(key: "_gift") { value }
+    }
+  }
+}

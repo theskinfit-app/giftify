@@ -1,0 +1,73 @@
+# Public App Store app. The custom-distribution app lives in shopify.app.toml — check
+# `shopify app info` before any deploy, because `shopify app config use` decides which
+# of the two you push to.
+#
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "2ad9f02ada969b7c29dd77ac931f7d71"
+name = "Giftify: Tiered Free Gifts"
+
+# TODO: replace both of these with the Railway domain once the service exists.
+# They are the only two lines that need to change.
+application_url = "https://example.com"
+embedded = true
+
+[build]
+# TRUE is correct for now: no merchant has this app installed, so letting
+# `shopify app dev` point the app at a temporary tunnel is exactly what you want.
+# Flip it to FALSE the moment a real URL is in application_url and anyone is using the
+# app — otherwise the next `shopify app dev` silently takes production down. That is
+# what happened to the custom app.
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  # Mandatory for a public app: Shopify will not accept it for review unless it is
+  # subscribed to all three and verifies them. `compliance_topics`, not `topics`.
+  # Handled by app/routes/webhooks.compliance.jsx.
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
+# Required by Shopify CLI 4.7.0 even for an app that subscribes to no events: leaving
+# it out fails `app deploy` and `app dev` with "[events]: Required", and both fields
+# below are mandatory. The empty list declares zero subscriptions, so this section is a
+# no-op — do not delete it, and do not add topics unless the app genuinely needs them.
+#
+# api_version must be "unstable": this module is still in preview and the server rejects
+# a dated version. It is deliberately not kept in step with [webhooks].api_version.
+[events]
+api_version = "unstable"
+subscription = []
+
+[access_scopes]
+# read_products to resolve gift products and collection membership; write_products for
+# the shop metafield that holds the tier list; write_discounts for the single automatic
+# "Free Gift" discount the app owns.
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,write_discounts,read_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+# Declares this app's reserved discount metafield, read by the discount function as
+# metafield(namespace: "$app", key: "function-configuration").
+[discount.metafields.app.function-configuration]
+type = "json"
+name = "Function configuration"
+access.admin = "merchant_read_write"
+access.storefront = "none"
+
+[auth]
+# /auth/callback comes from authPathPrefix in app/shopify.server.js. Do not change this
+# to /api/auth — that is not a route this app serves.
+# TODO: same Railway domain as application_url above.
+redirect_urls = [ "https://example.com/auth/callback" ]

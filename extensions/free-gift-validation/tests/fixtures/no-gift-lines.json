@@ -1,0 +1,17 @@
+{
+  "payload": {
+    "export": "cart-validations-generate-run",
+    "target": "cart.validations.generate.run",
+    "input": {
+      "cart": {
+        "lines": [
+          { "quantity": 12, "giftTier": null },
+          { "quantity": 3, "giftTier": null }
+        ]
+      }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

@@ -1,16 +1,18 @@
 {% comment %}
   Free Gift — theme app embed.
   Reads the tier config (shop metafield, storefront PUBLIC_READ) and hands it to
-  free-gift.js, which auto-adds/removes the gift so the native BXGY discount
-  applies. Enable under Theme editor → App embeds → Free Gift.
+  free-gift.js, which adds and removes the gift line. The app's discount function
+  is what makes that line free. Enable under Theme editor → App embeds → Free Gift.
+
+  The namespace must match SHOP_NS in app/models/gift-discounts.server.js.
 {% endcomment %}
 
-{% assign tiers = shop.metafields.theskinfit_gift.gift_tiers.value %}
+{% assign tiers = shop.metafields.free_gift.gift_tiers.value %}
 
 {% if tiers %}
   <script>
-    window.__TSF_GIFT_TIERS__ = {{ tiers | json }};
-    window.__TSF_GIFT_PROP__ = "_gift";
+    window.__FREE_GIFT_TIERS__ = {{ tiers | json }};
+    window.__FREE_GIFT_PROP__ = "_gift";
   </script>
 
   {%- comment -%}
@@ -19,15 +21,15 @@
     light-dismissed by a tap elsewhere, and never modal. Browsers without popover
     support ignore the attribute and fall back to the z-index below.
   {%- endcomment -%}
-  <div id="tsf-gift-popup" class="tsf-gift-popup" role="status" aria-live="polite" popover="manual" hidden>
-    <span class="tsf-gift-popup__icon">🎁</span>
-    <span class="tsf-gift-popup__text"></span>
+  <div id="free-gift-popup" class="free-gift-popup" role="status" aria-live="polite" popover="manual" hidden>
+    <span class="free-gift-popup__icon">🎁</span>
+    <span class="free-gift-popup__text"></span>
   </div>
 
   <script src="{{ 'free-gift.js' | asset_url }}" defer></script>
 
   {% style %}
-    .tsf-gift-popup{
+    .free-gift-popup{
       /* `inset:auto` and the margin/border/padding resets undo the user-agent
          stylesheet for [popover], which centres it with inset:0 + margin:auto and
          draws a border. Without these the toast lands in the middle of the screen. */
@@ -44,11 +46,11 @@
       transform:translate(-50%, calc(100% + 32px)); opacity:0;
       transition:opacity .28s ease, transform .32s cubic-bezier(.22,.61,.36,1);
     }
-    .tsf-gift-popup[data-show="true"]{ transform:translate(-50%, 0); opacity:1; }
-    .tsf-gift-popup__icon{ font-size:20px; }
+    .free-gift-popup[data-show="true"]{ transform:translate(-50%, 0); opacity:1; }
+    .free-gift-popup__icon{ font-size:20px; }
 
     @media (prefers-reduced-motion: reduce){
-      .tsf-gift-popup{ transition:opacity .2s ease; transform:translate(-50%, 0); }
+      .free-gift-popup{ transition:opacity .2s ease; transform:translate(-50%, 0); }
     }
   {% endstyle %}
 {% endif %}

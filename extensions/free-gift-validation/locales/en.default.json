@@ -1,0 +1,4 @@
+{
+  "name": "free-gift-validation",
+  "description": "Limits each free gift to one per order."
+}

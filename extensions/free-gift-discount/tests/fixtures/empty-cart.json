@@ -1,0 +1,31 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "lines": []
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "metafield": {
+          "jsonValue": {
+            "tiers": [
+              {
+                "id": "t_order5k",
+                "name": "Freebie over 5K",
+                "type": "order_subtotal",
+                "threshold": 5000,
+                "thresholdMax": null,
+                "enabled": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

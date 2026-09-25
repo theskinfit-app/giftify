@@ -4,14 +4,15 @@ import { useState, useCallback } from "react";
 import { useLoaderData, useNavigate, useSubmit, useNavigation, redirect } from "react-router";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { getTiers, upsertTier } from "../models/gift-discounts.server";
+import { getTiers, getShopCurrency, upsertTier } from "../models/gift-discounts.server";
 
 export async function loader({ request, params }) {
   const { admin } = await authenticate.admin(request);
-  if (params.id === "new") return { tier: null };
+  const currency = await getShopCurrency(admin);
+  if (params.id === "new") return { tier: null, currency };
   const tier = (await getTiers(admin)).find((t) => t.id === params.id);
   if (!tier) throw redirect("/app");
-  return { tier };
+  return { tier, currency };
 }
 
 export async function action({ request }) {
@@ -31,7 +32,7 @@ export async function action({ request }) {
 }
 
 export default function GiftEditor() {
-  const { tier } = useLoaderData();
+  const { tier, currency } = useLoaderData();
   const navigate = useNavigate();
   const submit = useSubmit();
   const saving = useNavigation().state === "submitting";
@@ -47,12 +48,11 @@ export default function GiftEditor() {
   const [collectionLabel, setCollectionLabel] = useState(tier?.collectionGid ? "Collection selected" : "");
   const [giftProductGid, setGiftProductGid] = useState(tier?.giftProductGid ?? "");
   const [giftLabel, setGiftLabel] = useState(tier?.giftProductTitle ?? "");
-  // A gift is free because its variant is priced Rs 0 — there is no discount. Catch
-  // a paid-only product here, at the moment of choosing, rather than letting the
-  // merchant find out from the tier list (or from a charged customer).
-  const [giftNotFree, setGiftNotFree] = useState(
-    tier ? Number(tier.giftVariantPrice ?? 0) > 0 : false,
-  );
+
+  // Amounts are entered in the shop's own currency, so label the fields with it
+  // rather than assuming one. Falls back to an unlabelled "Threshold" when the shop
+  // query failed — better than naming the wrong currency.
+  const amountLabel = (base) => (currency ? `${base} (${currency})` : base);
 
   const needsCollection = type !== "order_subtotal";
   const needsThreshold = type !== "collection_contains";
@@ -80,14 +80,6 @@ export default function GiftEditor() {
     if (sel?.length) {
       setGiftProductGid(sel[0].id);
       setGiftLabel(sel[0].title);
-      // The picker usually carries variants with prices. When it doesn't, say
-      // nothing rather than guess — the server checks the real price on save.
-      const variants = sel[0].variants;
-      setGiftNotFree(
-        Array.isArray(variants) && variants.length
-          ? !variants.some((v) => Number(v.price) === 0)
-          : false,
-      );
     }
   }, []);
 
@@ -132,18 +124,18 @@ export default function GiftEditor() {
           {needsThreshold && (
             <s-stack direction="block" gap="small">
               <s-number-field
-                label="Threshold (PKR)"
+                label={amountLabel("Threshold")}
                 value={threshold}
                 min="1"
                 details="The gift starts at this amount."
                 onChange={(e) => setThreshold(e.currentTarget.value)}
               ></s-number-field>
               <s-number-field
-                label="Maximum (PKR) — optional"
+                label={`${amountLabel("Maximum")} — optional`}
                 value={thresholdMax}
                 min="1"
                 error={capError || undefined}
-                details="Leave blank for no upper limit. Both ends count, so 6000 and 7999 gives the gift from Rs 6,000 up to and including Rs 7,999 — and stops at Rs 8,000."
+                details="Leave blank for no upper limit. Both ends count, so 6000 and 7999 gives the gift from 6,000 up to and including 7,999 — and stops at 8,000."
                 onChange={(e) => setThresholdMax(e.currentTarget.value)}
               ></s-number-field>
             </s-stack>
@@ -168,18 +160,9 @@ export default function GiftEditor() {
               {giftLabel && <s-text tone="subdued">{giftLabel}</s-text>}
             </s-stack>
             <s-text tone="subdued">
-              Pick a dedicated Rs 0 product, not the saleable one. A Rs 0 price is what makes the
-              gift free — there is no discount — and adding a Rs 0 variant to a product you sell
-              would let anyone select it on the product page and take it for nothing.
+              Any product works — it does not need a special price. This app discounts the line to
+              free once the tier condition is met, and one gift is given per qualifying order.
             </s-text>
-            {giftNotFree && (
-              <s-banner tone="warning">
-                This product has no Rs 0 variant, so the customer would be charged for the gift.
-                Create a separate product priced Rs 0 (for example “Free Gift – Mini Serum 10ml”),
-                then select that here. You can still save; the tier will show as broken and the
-                storefront will refuse to hand the gift out until it is free.
-              </s-banner>
-            )}
           </s-stack>
 
           <s-checkbox

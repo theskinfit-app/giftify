@@ -1,0 +1,29 @@
+{
+  "payload": {
+    "export": "cart-validations-generate-run",
+    "target": "cart.validations.generate.run",
+    "input": {
+      "cart": {
+        "lines": [
+          { "quantity": 5, "giftTier": null },
+          { "quantity": 1, "giftTier": { "value": "t_order5k" } },
+          { "quantity": 6, "giftTier": { "value": "t_order10k" } }
+        ]
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "validationAdd": {
+            "errors": [
+              {
+                "target": "$.cart",
+                "message": "A free gift is limited to one per order. Please update your cart to continue."
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

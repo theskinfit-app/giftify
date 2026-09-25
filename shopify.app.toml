@@ -21,6 +21,13 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  # Mandatory for a public app: Shopify will not accept the app for review unless it
+  # is subscribed to all three and verifies them. `compliance_topics`, not `topics`.
+  # Handled by app/routes/webhooks.compliance.jsx.
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
 # Required by Shopify CLI 4.7.0 even for an app that subscribes to no events:
 # leaving it out fails `app deploy` and `app dev` with "[events]: Required", and
 # both fields below are mandatory. The empty list declares zero subscriptions,

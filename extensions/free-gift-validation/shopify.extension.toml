@@ -1,0 +1,28 @@
+api_version = "2026-07"
+
+[[extensions]]
+name = "t:name"
+handle = "free-gift-validation"
+type = "function"
+uid = "8f2634d5-0643-09e2-6358-acf5e00f5a7f6ec4c824"
+description = "t:description"
+
+  # Server-side backstop for the one rule the storefront cannot enforce on its own:
+  # a gift line is always quantity 1.
+  #
+  # The theme script clamps gift quantities in flight, but it is JavaScript on the
+  # storefront — a cart form that posts stale `updates` on the way to checkout, or an
+  # express checkout that skips the cart entirely, can get past it. A validation
+  # function runs on Shopify's servers, in the online store cart AND throughout
+  # checkout including Shop Pay / Apple Pay / Google Pay, so it cannot be outrun.
+  #
+  # This is only possible because the app is publicly distributed: functions from a
+  # custom app require the store to be on Shopify Plus.
+  [[extensions.targeting]]
+  target = "cart.validations.generate.run"
+  input_query = "src/cart_validations_generate_run.graphql"
+  export = "cart-validations-generate-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"

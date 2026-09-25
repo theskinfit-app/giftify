@@ -3,7 +3,12 @@
 import { useActionData, useLoaderData, useNavigate, useSubmit } from "react-router";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { getTiersWithHealth, deleteTier, setTierEnabled } from "../models/gift-discounts.server";
+import {
+  getTiersWithHealth,
+  getShopCurrency,
+  deleteTier,
+  setTierEnabled,
+} from "../models/gift-discounts.server";
 
 const TYPE_LABELS = {
   order_subtotal: "Order subtotal",
@@ -13,7 +18,11 @@ const TYPE_LABELS = {
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
-  return { tiers: await getTiersWithHealth(admin) };
+  const [tiers, currency] = await Promise.all([
+    getTiersWithHealth(admin),
+    getShopCurrency(admin),
+  ]);
+  return { tiers, currency };
 }
 
 export async function action({ request }) {
@@ -34,18 +43,34 @@ export async function action({ request }) {
 }
 
 export default function Index() {
-  const { tiers } = useLoaderData();
+  const { tiers, currency } = useLoaderData();
   const actionData = useActionData();
   const navigate = useNavigate();
   const submit = useSubmit();
   const broken = tiers.filter((t) => t.broken);
 
-  const money = (n) => `Rs${Number(n).toLocaleString("en-PK")}`;
+  // Every merchant sees their own currency, in their own locale. Passing undefined
+  // as the locale lets the browser decide; falling back to a plain number keeps the
+  // page rendering if the shop query failed or the code is one Intl doesn't know.
+  const money = (n) => {
+    const amount = Number(n);
+    if (!currency) return amount.toLocaleString();
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 0,
+      }).format(amount);
+    } catch {
+      return `${currency} ${amount.toLocaleString()}`;
+    }
+  };
+
   const act = (intent, id) => submit({ intent, id }, { method: "post" });
   const condition = (t) => {
     if (t.type === "collection_contains") return "≥ 1 item";
-    // A capped tier is a window, not a floor — showing only "≥ Rs 6,000" would
-    // hide the fact that it stops paying out at Rs 8,000.
+    // A capped tier is a window, not a floor — showing only the lower bound would
+    // hide the fact that the tier stops paying out above the upper one.
     if (t.thresholdMax > 0) return `${money(t.threshold)} – ${money(t.thresholdMax)}`;
     return `≥ ${money(t.threshold)}`;
   };
@@ -54,7 +79,11 @@ export default function Index() {
   // rather than "Invalid Date".
   const when = (iso) =>
     iso
-      ? new Date(iso).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
+      ? new Date(iso).toLocaleDateString(undefined, {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
       : "—";
 
   return (
@@ -69,24 +98,22 @@ export default function Index() {
         {actionData?.error && <s-banner tone="critical">{actionData.error}</s-banner>}
 
         {broken.length > 0 && (
-          <s-banner tone="critical" heading="A gift isn't free">
+          <s-banner tone="critical" heading="The Free Gift discount isn't running">
             <s-paragraph>
-              {broken.length === 1 ? "One tier" : `${broken.length} tiers`} point at a gift variant
-              that costs money or no longer exists. A gift is free because its variant is priced
-              Rs 0 — there is no discount involved — so until this is fixed the storefront keeps
-              taking those gifts back out of the cart rather than let a customer be charged.
-              Open the tier, set the price of that variant to 0 in Shopify, and save again.
+              All tiers are powered by a single automatic discount named “Free Gift”, and it is
+              currently missing or inactive in Shopify. Until it runs, no gift can be made free —
+              the storefront will keep taking gifts back out of the cart rather than let a customer
+              be charged for one. Save any tier below to rebuild it.
             </s-paragraph>
           </s-banner>
         )}
 
         <s-banner tone="info">
-          A gift is a Rs 0 product, not a discount. Create a separate product priced Rs 0 for each
-          gift and point the tier at that — do not add a Rs 0 variant to something you sell, or
-          shoppers can pick it on the product page for free. Tiers stack: a Rs 5,000 tier and a
-          Rs 10,000 tier both pay out on a Rs 12,000 cart. Gifts are added and removed in the cart
-          by the Free Gift theme app embed (enable it under Theme editor → App embeds), which also
-          pulls any gift line it finds carrying a price.
+          All tiers share one automatic discount powered by this app, so they stack: a 5,000 tier
+          and a 10,000 tier both pay out on a 12,000 cart. Pick any product as the gift — it does
+          not need a special price. The gift is added to the cart by the Free Gift theme app embed
+          (enable it under Theme editor → App embeds), and the discount makes it free at checkout,
+          but only while the tier condition genuinely holds.
         </s-banner>
       </s-section>
 
@@ -115,7 +142,11 @@ export default function Index() {
                     </s-stack>
                     <s-stack direction="inline" gap="small" blockAlignment="center">
                       {t.broken ? (
-                        <s-badge tone="critical">{t.brokenReason ?? "Gift is not free"}</s-badge>
+                        <s-badge tone="critical">
+                          {t.discountStatus
+                            ? `Discount ${t.discountStatus.toLowerCase()}`
+                            : "Discount missing"}
+                        </s-badge>
                       ) : (
                         <s-badge tone={t.enabled ? "success" : "warning"}>
                           {t.enabled ? "Active" : "Paused"}
@@ -132,9 +163,8 @@ export default function Index() {
                         <s-button icon="edit" onClick={() => navigate(`/app/gifts/${t.id}`)}>
                           Edit
                         </s-button>
-                        {/* No point activating a tier whose gift isn't free — the theme
-                            would only pull the gift straight back out. Fix the variant
-                            price and save; the tier stops being broken. */}
+                        {/* A broken tier can't be resumed — there's no discount to
+                            activate. Editing and saving rebuilds it. */}
                         {!t.broken &&
                           (t.enabled ? (
                             <s-button onClick={() => act("pause", t.id)}>Pause</s-button>

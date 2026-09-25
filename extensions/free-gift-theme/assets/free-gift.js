@@ -2,14 +2,13 @@
   "use strict";
 
   // ---------------------------------------------------------------------------
-  // Free Gift — auto-add / auto-remove the gift line.
+  // Free Gift — auto-add / auto-remove the gift line so the app's discount
+  // function can zero it out.
   //
-  // The gift is a Rs 0 variant, so nothing has to discount it: adding the line IS
-  // giving it away. (Earlier designs used a BXGY discount, then a Discount Function;
-  // Shopify only allows functions from a custom app on Shopify Plus stores, so the
-  // price itself became the mechanism.) That makes this script the only thing
-  // deciding who gets what — and the only thing that can protect the customer, so
-  // it removes any gift line it finds carrying a price. See dropPayableGifts.
+  // This script decides WHICH gift belongs in the cart; the function decides which
+  // gift lines are free. Both read the same tier config, so they cannot disagree.
+  // Whatever the function will not make free, this script pulls back out rather
+  // than let a customer be charged for a gift — see dropPayableGifts.
   //
   // Theme independence is the hard requirement here: this ships to many
   // merchants on unknown themes, so we never reach into theme-specific DOM.
@@ -32,22 +31,20 @@
   //             reload as the last resort so the cart is never left stale.
   // ---------------------------------------------------------------------------
 
-  var TIERS = (window.__TSF_GIFT_TIERS__ || []).filter(function (t) {
+  var TIERS = (window.__FREE_GIFT_TIERS__ || []).filter(function (t) {
     return t.enabled && (t.giftVariantId || t.giftVariantGid);
   });
-  var GIFT_PROP = window.__TSF_GIFT_PROP__ || "_gift";
+  var GIFT_PROP = window.__FREE_GIFT_PROP__ || "_gift";
   if (!TIERS.length) return;
 
-  // A tier's name is the title its automatic discount carried, back when tiers were
-  // backed by one. Nothing creates those discounts now, so this normally matches
-  // nothing — it is kept because it costs one string compare and it is what keeps
-  // lineValue() honest on any store that still has such a discount lying around.
+  // Each tier's name is the message its discount carries, so this is how we
+  // recognise a price reduction as OUR OWN doing. See lineValue().
   var OUR_DISCOUNT_TITLES = {};
   TIERS.forEach(function (t) { if (t.name) OUR_DISCOUNT_TITLES[t.name] = 1; });
 
   var ROOT = (window.Shopify && Shopify.routes && Shopify.routes.root) || "/";
-  var TOAST_KEY = "tsf_gift_toast";
-  var SELF = "tsf-free-gift"; // marks our own writes so we don't react to them
+  var TOAST_KEY = "free_gift_toast";
+  var SELF = "free-gift-app"; // marks our own writes so we don't react to them
   var CART_LINES_UPDATE = "shopify:cart:lines-update"; // standard storefront protocol
   var THEME_CART_UPDATE = "cart:update";               // Horizon's own ThemeEvents.cartUpdate
   var lastSections = null; // section HTML returned by our own last cart mutation
@@ -71,10 +68,10 @@
   }
 
   // Opt-in logging. Turn on from the storefront console with:
-  //   localStorage.setItem('tsf_gift_debug', '1')  then reload.
+  //   localStorage.setItem('free_gift_debug', '1')  then reload.
   function debugOn() {
-    if (window.__TSF_GIFT_DEBUG__ === true) return true;
-    try { return localStorage.getItem("tsf_gift_debug") === "1"; } catch (e) { return false; }
+    if (window.__FREE_GIFT_DEBUG__ === true) return true;
+    try { return localStorage.getItem("free_gift_debug") === "1"; } catch (e) { return false; }
   }
   function debug() {
     if (!debugOn()) return;
@@ -87,7 +84,7 @@
   // never handed out its gift again even after the customer changed the cart and
   // the condition was cleanly met. The block is about one cart state, so it must
   // expire when that state does.
-  var BLOCK_KEY = "tsf_gift_blocked";
+  var BLOCK_KEY = "free_gift_blocked";
   var blocked = (function () {
     try { return JSON.parse(sessionStorage.getItem(BLOCK_KEY) || "{}") || {}; }
     catch (e) { return {}; }
@@ -131,7 +128,9 @@
   function isGift(line) { return !!(line.properties && line.properties[GIFT_PROP]); }
   function tierIdOf(line) { return line.properties[GIFT_PROP]; }
   function realLines(cart) { return cart.items.filter(function (l) { return !isGift(l); }); }
-  function money(cents) { return cents / 100; } // PKR thresholds are in major units
+  // /cart.js reports money in the shop currency's minor units; tier thresholds are
+  // entered in major units.
+  function money(cents) { return cents / 100; }
 
   /**
    * What a line contributes to a tier's threshold.
@@ -143,9 +142,6 @@
    * gift, the price would go back up, and the tier would qualify again. That
    * feedback loop is what used to remove a gift whose condition was still met.
    *
-   * A Rs 0 gift allocates nothing, so today this is normally just
-   * `final_line_price` — but the guard has to stay, because it is what keeps the
-   * loop from coming back on a store that still has an old gift discount active.
    * Discounts from anything else (the merchant's own sales, codes) stay deducted —
    * those are real reductions in what the customer is spending.
    */
@@ -161,7 +157,7 @@
   }
 
   /**
-   * The number a tier is measured against: PKR subtotal for the subtotal tiers,
+   * The number a tier is measured against: the money subtotal for the subtotal tiers,
    * item count for collection_contains. Gift lines never count toward it.
    * Exposed separately from qualifies() so the debug inspector can show the
    * exact figure the decision was made on.
@@ -182,7 +178,7 @@
 
   /**
    * A threshold tier can be a window rather than a floor: "gift on orders of
-   * Rs 6,000 to Rs 7,999" is threshold 6000 with thresholdMax 7999. Both ends are
+   * 6,000 to 7,999" is threshold 6000 with thresholdMax 7999. Both ends are
    * inclusive. No cap — absent, null or zero — leaves the tier open-ended, which
    * is what every tier saved before thresholdMax existed relies on.
    *
@@ -774,7 +770,7 @@
       var fingerprint = realFingerprint(cart);
 
       // Every tier is judged on its own, against the same cart. Two tiers on the
-      // same condition (Rs 5,000 and Rs 10,000) both fire at Rs 12,000, and a
+      // same condition (5,000 and 10,000) both fire at 12,000, and a
       // collection tier fires alongside an order-total tier — nothing competes,
       // nothing is shadowed by a "higher" tier.
       TIERS.forEach(function (t) {
@@ -818,20 +814,21 @@
 
     /**
      * A gift the customer would actually PAY for must never be left in the cart.
-     * This is the safety net, and with no discount in play it is the ONLY one.
+     * This is the safety net, and it does not trust the discount to have worked.
      *
-     * A gift line costs money when the tier points at a priced variant rather than
-     * the Rs 0 one — the merchant edited the price in Shopify, or picked a product
-     * that never had a free variant. The app warns about both, but the storefront
-     * must not depend on the merchant having seen the warning.
+     * The discount can fail to zero a line for reasons invisible from here: the
+     * merchant deleted or paused it in the Shopify admin, the function returned no
+     * candidate for this cart, or another promotion won the line. The storefront
+     * must not depend on any of that having gone right.
      *
      * Two different situations end up here, and they must not be treated alike:
      *
-     *   - The tier no longer qualifies. The gift is on its way out anyway. Remove
-     *     it, and do NOT hold it against the tier — it did nothing wrong.
+     *   - The tier no longer qualifies. The gift is on its way out anyway and its
+     *     discount has simply lapsed. Remove it, and do NOT hold it against the
+     *     tier — it did nothing wrong.
      *   - The tier DOES qualify and the line still costs money. That is a real
-     *     misconfiguration. Remove it and block the tier for this cart, so we don't
-     *     add and remove it on a loop (which is what desynced the theme).
+     *     failure. Remove it and block the tier for this cart, so we don't add and
+     *     remove it on a loop (which is what desynced the theme).
      */
     function dropPayableGifts(cart) {
       var payable = [];
@@ -884,7 +881,7 @@
             : "You earned free gifts: " +
                 added.map(function (t) { return t.giftProductTitle; }).join(", ") + " 🎁",
         );
-        document.dispatchEvent(new CustomEvent("tsf:gift-updated"));
+        document.dispatchEvent(new CustomEvent("free-gift:updated"));
       }
 
       // Hand the cart on as well as the verdict: the next pass plans from it
@@ -963,9 +960,9 @@
   }
 
   function popup(text) {
-    var el = document.getElementById("tsf-gift-popup");
+    var el = document.getElementById("free-gift-popup");
     if (!el) return;
-    el.querySelector(".tsf-gift-popup__text").textContent = text;
+    el.querySelector(".free-gift-popup__text").textContent = text;
 
     clearTimeout(timer);
     clearTimeout(exitTimer);
@@ -1138,7 +1135,7 @@
         var next = positional.map(function (v, i) {
           return giftPositions[i + 1] && Number(v) > GIFT_MAX ? String(GIFT_MAX) : v;
         });
-        if (next.join(" ") !== positional.join(" ")) {
+        if (next.join(",") !== positional.join(",")) {
           p.delete(name);
           next.forEach(function (v) { p.append(name, v); });
           changed = true;
@@ -1290,11 +1287,11 @@
   var XhrOpen = XMLHttpRequest.prototype.open;
   var XhrSend = XMLHttpRequest.prototype.send;
   var patchedOpen = function (method, url) {
-    this.__tsfCart = typeof url === "string" && /\/cart\/(add|change|update|clear)/.test(url);
+    this.__freeGiftCart = typeof url === "string" && /\/cart\/(add|change|update|clear)/.test(url);
     return XhrOpen.apply(this, arguments);
   };
   var patchedSend = function (body) {
-    if (this.__tsfCart) {
+    if (this.__freeGiftCart) {
       rememberSections(body);
       var guarded = clampCartWriteBody(body);
       if (guarded !== body) {
@@ -1333,9 +1330,9 @@
   }
 
   // ---- diagnostics ---------------------------------------------------------
-  // Run `__tsfGiftInspect()` in the storefront console to see exactly which
+  // Run `__freeGiftInspect()` in the storefront console to see exactly which
   // lines are recognised as gifts and what figure each tier was judged on.
-  window.__tsfGiftInspect = function () {
+  window.__freeGiftInspect = function () {
     return readCart().then(function (cart) {
       var report = {
         standardActionsAvailable: canUseActions(),
@@ -1391,7 +1388,7 @@
   // Clear the session's blocked-tier list and mutation budget, then re-check.
   // Needed while testing: once a tier is blocked it stays blocked for the whole
   // session, which otherwise looks like the tier is broken.
-  window.__tsfGiftReset = function () {
+  window.__freeGiftReset = function () {
     blocked = {};
     mutations = 0;
     lastSig = "";

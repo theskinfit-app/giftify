@@ -128,9 +128,32 @@
   function isGift(line) { return !!(line.properties && line.properties[GIFT_PROP]); }
   function tierIdOf(line) { return line.properties[GIFT_PROP]; }
   function realLines(cart) { return cart.items.filter(function (l) { return !isGift(l); }); }
-  // /cart.js reports money in the shop currency's minor units; tier thresholds are
-  // entered in major units.
-  function money(cents) { return cents / 100; }
+  /**
+   * The shop-to-presentment exchange rate for this visitor, as Shopify publishes it
+   * on the storefront. Anything missing or non-positive falls back to 1, which is
+   * both correct for a single-currency store and the only safe value for a divisor.
+   */
+  function presentmentRate() {
+    var r = window.Shopify && Shopify.currency && Number(Shopify.currency.rate);
+    return r > 0 ? r : 1;
+  }
+
+  /**
+   * Turn a /cart.js amount into the number a tier threshold is written in.
+   *
+   * Two conversions, and both matter:
+   *   ÷ 100    — /cart.js reports minor units; thresholds are entered in major ones.
+   *   ÷ rate   — /cart.js reports the CUSTOMER's presentment currency, while the
+   *              merchant typed the threshold in the SHOP's. On a single-currency
+   *              store the rate is 1 and this does nothing, which is why it went
+   *              unnoticed; on a Shopify Markets store a visitor browsing in another
+   *              currency would otherwise be measured against a meaningless number.
+   *
+   * The discount function performs the identical conversion with
+   * input.presentmentCurrencyRate. They have to agree, or this script hands out a
+   * gift the function will refuse to make free.
+   */
+  function money(cents) { return cents / 100 / presentmentRate(); }
 
   /**
    * What a line contributes to a tier's threshold.
@@ -158,9 +181,13 @@
 
   /**
    * The number a tier is measured against: the money subtotal for the subtotal tiers,
-   * item count for collection_contains. Gift lines never count toward it.
+   * the number of items for collection_contains. Gift lines never count toward it.
    * Exposed separately from qualifies() so the debug inspector can show the
    * exact figure the decision was made on.
+   *
+   * collection_contains counts UNITS, not lines. Five of one product is five items
+   * toward "any 2 from this collection" — counting lines would call that one, which
+   * is not what the merchant asked for.
    */
   function measure(tier, cart) {
     var lines = realLines(cart);
@@ -169,11 +196,23 @@
     }
     var ids = tier.collectionProductIds || [];
     var inColl = lines.filter(function (l) { return ids.indexOf(l.product_id) !== -1; });
-    if (tier.type === "collection_contains") return inColl.length;
+    if (tier.type === "collection_contains") {
+      return inColl.reduce(function (n, l) { return n + (l.quantity || 0); }, 0);
+    }
     if (tier.type === "collection_subtotal") {
       return money(inColl.reduce(function (a, l) { return a + lineValue(l); }, 0));
     }
     return 0;
+  }
+
+  /**
+   * How many items from the collection a collection_contains tier asks for. Absent,
+   * zero or unparseable means 1 — which is exactly how every tier saved before this
+   * field existed behaved, since any cart line carries at least one unit.
+   */
+  function minQuantity(tier) {
+    var n = Number(tier.minQuantity);
+    return n > 0 ? n : 1;
   }
 
   /**
@@ -187,7 +226,7 @@
    */
   function qualifies(tier, cart) {
     var v = measure(tier, cart);
-    if (tier.type === "collection_contains") return v > 0;
+    if (tier.type === "collection_contains") return v >= minQuantity(tier);
     if (v < tier.threshold) return false;
     var max = Number(tier.thresholdMax);
     return !(max > 0) || v <= max;

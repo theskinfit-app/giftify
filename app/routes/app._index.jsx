@@ -68,7 +68,10 @@ export default function Index() {
 
   const act = (intent, id) => submit({ intent, id }, { method: "post" });
   const condition = (t) => {
-    if (t.type === "collection_contains") return "≥ 1 item";
+    if (t.type === "collection_contains") {
+      const n = Number(t.minQuantity) > 0 ? Number(t.minQuantity) : 1;
+      return `≥ ${n} ${n === 1 ? "item" : "items"}`;
+    }
     // A capped tier is a window, not a floor — showing only the lower bound would
     // hide the fact that the tier stops paying out above the upper one.
     if (t.thresholdMax > 0) return `${money(t.threshold)} – ${money(t.thresholdMax)}`;

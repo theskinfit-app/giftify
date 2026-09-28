@@ -8,37 +8,37 @@
         "lines": [
           {
             "id": "gid://shopify/CartLine/own1",
+            "quantity": 2,
             "cost": {
               "subtotalAmount": {
-                "amount": "7000.0"
+                "amount": "1200.0"
               }
             },
             "giftTier": null,
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/PLAIN"
+                "id": "gid://shopify/Product/COLL_A"
               }
-            },
-            "quantity": 1
+            }
           },
           {
             "id": "gid://shopify/CartLine/gift",
+            "quantity": 1,
             "cost": {
               "subtotalAmount": {
-                "amount": "500.0"
+                "amount": "300.0"
               }
             },
             "giftTier": {
-              "value": "t_window"
+              "value": "t_contains2"
             },
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
                 "id": "gid://shopify/Product/GIFT1"
               }
-            },
-            "quantity": 1
+            }
           }
         ]
       },
@@ -50,12 +50,16 @@
           "jsonValue": {
             "tiers": [
               {
-                "id": "t_window",
-                "name": "Gift for Rs 6,000-7,999",
-                "type": "order_subtotal",
-                "threshold": 6000,
-                "thresholdMax": 7999,
-                "enabled": true
+                "id": "t_contains2",
+                "name": "Any 2 from the collection",
+                "type": "collection_contains",
+                "threshold": 0,
+                "thresholdMax": null,
+                "minQuantity": 2,
+                "enabled": true,
+                "collectionProductGids": [
+                  "gid://shopify/Product/COLL_A"
+                ]
               }
             ]
           }
@@ -68,7 +72,7 @@
           "productDiscountsAdd": {
             "candidates": [
               {
-                "message": "Gift for Rs 6,000-7,999",
+                "message": "Any 2 from the collection",
                 "targets": [
                   {
                     "cartLine": {

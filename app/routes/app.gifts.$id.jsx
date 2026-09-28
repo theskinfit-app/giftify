@@ -24,6 +24,7 @@ export async function action({ request }) {
     type: f.get("type"),
     threshold: f.get("threshold"),
     thresholdMax: f.get("thresholdMax"),
+    minQuantity: f.get("minQuantity"),
     enabled: f.get("enabled") === "true",
     collectionGid: f.get("collectionGid") || null,
     giftProductGid: f.get("giftProductGid"),
@@ -43,6 +44,7 @@ export default function GiftEditor() {
   const [thresholdMax, setThresholdMax] = useState(
     tier?.thresholdMax ? String(tier.thresholdMax) : "",
   );
+  const [minQuantity, setMinQuantity] = useState(String(tier?.minQuantity ?? 1));
   const [enabled, setEnabled] = useState(tier?.enabled ?? true);
   const [collectionGid, setCollectionGid] = useState(tier?.collectionGid ?? "");
   const [collectionLabel, setCollectionLabel] = useState(tier?.collectionGid ? "Collection selected" : "");
@@ -56,6 +58,15 @@ export default function GiftEditor() {
 
   const needsCollection = type !== "order_subtotal";
   const needsThreshold = type !== "collection_contains";
+  // collection_contains is counted in items rather than money, so it gets a quantity
+  // instead of a threshold.
+  const needsQuantity = type === "collection_contains";
+
+  const quantityValue = Number(minQuantity);
+  const quantityError =
+    needsQuantity && (!Number.isInteger(quantityValue) || quantityValue < 1)
+      ? "Enter a whole number of 1 or more."
+      : "";
 
   // A blank cap is the normal case: the tier stays open-ended. A cap that isn't
   // above the threshold would be a tier that can never fire, so block the save
@@ -89,6 +100,7 @@ export default function GiftEditor() {
     if (needsCollection) data.collectionGid = collectionGid;
     // Always send it, blank included — that's how an existing cap gets cleared.
     if (needsThreshold) data.thresholdMax = hasCap ? String(capValue) : "";
+    if (needsQuantity) data.minQuantity = String(quantityValue);
     submit(data, { method: "post" });
   };
 
@@ -97,7 +109,8 @@ export default function GiftEditor() {
     giftProductGid &&
     (!needsCollection || collectionGid) &&
     (!needsThreshold || Number(threshold) > 0) &&
-    !capError;
+    !capError &&
+    !quantityError;
 
   return (
     <s-page>
@@ -139,6 +152,18 @@ export default function GiftEditor() {
                 onChange={(e) => setThresholdMax(e.currentTarget.value)}
               ></s-number-field>
             </s-stack>
+          )}
+
+          {needsQuantity && (
+            <s-number-field
+              label="Minimum items from the collection"
+              value={minQuantity}
+              min="1"
+              step="1"
+              error={quantityError || undefined}
+              details="Counts units, not products: 2 of a single item from the collection meets a requirement of 2."
+              onChange={(e) => setMinQuantity(e.currentTarget.value)}
+            ></s-number-field>
           )}
 
           {needsCollection && (

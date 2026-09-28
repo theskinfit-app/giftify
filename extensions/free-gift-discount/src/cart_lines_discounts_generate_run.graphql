@@ -1,7 +1,9 @@
 query CartInput {
+  presentmentCurrencyRate
   cart {
     lines {
       id
+      quantity
       cost {
         subtotalAmount {
           amount

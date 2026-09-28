@@ -67,6 +67,16 @@ const capOrNull = (raw) => {
 };
 
 /**
+ * How many items from the collection a `collection_contains` tier requires. Blank,
+ * zero and anything unparseable mean 1 — which is how every tier saved before this
+ * field existed behaved, since a cart line always carries at least one unit.
+ */
+const minQuantityOrOne = (raw) => {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n > 0 ? n : 1;
+};
+
+/**
  * True when a mutation failed because the discount is no longer there — the merchant
  * deleted it directly in the Shopify admin. Shopify reports this as "Automatic
  * discount does not exist."
@@ -235,6 +245,7 @@ function functionConfig(tiers) {
         type: t.type,
         threshold: t.threshold,
         thresholdMax: t.thresholdMax ?? null,
+        minQuantity: t.minQuantity ?? 1,
         enabled: true,
         collectionProductGids: t.collectionProductGids ?? [],
       })),
@@ -359,6 +370,8 @@ export async function upsertTier(admin, form) {
     type: form.type,
     threshold: form.type === "collection_contains" ? 0 : Number(form.threshold) || 0,
     thresholdMax: form.type === "collection_contains" ? null : capOrNull(form.thresholdMax),
+    // Only meaningful for collection_contains; the subtotal tiers measure money.
+    minQuantity: form.type === "collection_contains" ? minQuantityOrOne(form.minQuantity) : 1,
     collectionGid: form.collectionGid || null,
     collectionId: numId(form.collectionGid),
     collectionProductIds: [],  // numeric, for the theme

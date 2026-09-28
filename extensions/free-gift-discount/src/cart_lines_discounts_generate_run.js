@@ -49,10 +49,30 @@ export function cartLinesDiscountsGenerateRun(input) {
   const productIdOf = (line) =>
     line.merchandise.__typename === 'ProductVariant' ? line.merchandise.product.id : null;
 
+  /**
+   * Cart money arrives in the CUSTOMER's presentment currency; a merchant types the
+   * threshold in the SHOP's currency. On a single-currency store those are the same
+   * thing and the rate is 1, which is why this went unnoticed — but on any store
+   * using Shopify Markets they are not, and a shopper browsing in another currency
+   * would be measured against a number that means nothing to them. A PKR 5,000 tier
+   * compared against a $20 subtotal never fires.
+   *
+   * presentment = shop × rate, so shop = presentment ÷ rate. A missing or zero rate
+   * falls back to 1: leaving the amount alone is right for the single-currency case
+   * and is the only safe thing to do with a divisor we do not trust.
+   *
+   * The theme script applies the identical conversion, using Shopify.currency.rate.
+   * They have to agree, or the theme hands out a gift the function will not discount.
+   */
+  const rate = Number(input.presentmentCurrencyRate);
+  const inShopCurrency = (amount) => (rate > 0 ? amount / rate : amount);
+
   // Thresholds are judged only on the customer's own lines. Counting gift lines
   // would let a gift push the cart over — or under — its own threshold, which is
   // the feedback loop that made tiers flap on the storefront.
-  const ownSubtotal = ownLines.reduce((sum, line) => sum + amountOf(line), 0);
+  const ownSubtotal = inShopCurrency(
+    ownLines.reduce((sum, line) => sum + amountOf(line), 0),
+  );
 
   // Collection membership comes from product ids in the config, not from
   // `inAnyCollection`: that field needs its collection ids baked into the input
@@ -92,15 +112,31 @@ export function cartLinesDiscountsGenerateRun(input) {
     return !(max > 0) || value <= max;
   };
 
+  // How many items from the collection a `collection_contains` tier asks for.
+  // Absent, zero or unparseable means 1, which is what every tier saved before this
+  // field existed relies on.
+  const minQuantity = (tier) => {
+    const n = Number(tier.minQuantity);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  };
+
+  // Units, not lines. Five of one product is five items toward the requirement —
+  // counting lines instead would call that one, which is not what a merchant asking
+  // for "any 2 items from this collection" means.
+  const unitsInCollection = (tier) =>
+    linesInCollection(tier).reduce((n, line) => n + Number(line.quantity ?? 0), 0);
+
   const qualifies = (tier) => {
     switch (tier.type) {
       case 'order_subtotal':
         return withinRange(ownSubtotal, tier);
       case 'collection_contains':
-        return linesInCollection(tier).length > 0;
+        return unitsInCollection(tier) >= minQuantity(tier);
       case 'collection_subtotal':
         return withinRange(
-          linesInCollection(tier).reduce((sum, line) => sum + amountOf(line), 0),
+          inShopCurrency(
+            linesInCollection(tier).reduce((sum, line) => sum + amountOf(line), 0),
+          ),
           tier,
         );
       default:

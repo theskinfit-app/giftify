@@ -3,6 +3,7 @@
     "export": "cart-lines-discounts-generate-run",
     "target": "cart.lines.discounts.generate.run",
     "input": {
+      "presentmentCurrencyRate": 1,
       "cart": {
         "lines": [
           {
@@ -18,7 +19,8 @@
               "product": {
                 "id": "gid://shopify/Product/PLAIN"
               }
-            }
+            },
+            "quantity": 1
           },
           {
             "id": "gid://shopify/CartLine/gift",
@@ -35,7 +37,8 @@
               "product": {
                 "id": "gid://shopify/Product/GIFT1"
               }
-            }
+            },
+            "quantity": 1
           }
         ]
       },

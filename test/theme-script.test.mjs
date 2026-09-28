@@ -45,12 +45,15 @@ function lift(name, arity) {
 // ---------------------------------------------------------------------------
 // qualifies() — thresholds, and the optional upper bound that makes a tier a window
 // ---------------------------------------------------------------------------
-suite("qualifies(): threshold floor and optional cap");
+suite("qualifies(): threshold floor, optional cap, collection item count");
 {
   let measured = 0;
-  const qualifies = new Function("measure", "return " + lift("qualifies", "tier, cart"))(
-    () => measured,
-  );
+  // qualifies() leans on minQuantity(), so lift the real one rather than stub it —
+  // the two are a pair and a stub would hide a change to either.
+  const qualifies = new Function(
+    "measure",
+    lift("minQuantity", "tier") + "\nreturn " + lift("qualifies", "tier, cart"),
+  )(() => measured);
 
   const cases = [
     [{ type: "order_subtotal", threshold: 6000, thresholdMax: 7999 }, 5999, false, "below the floor"],
@@ -62,8 +65,15 @@ suite("qualifies(): threshold floor and optional cap");
     [{ type: "order_subtotal", threshold: 6000, thresholdMax: null }, 99999, true, "cap null"],
     [{ type: "order_subtotal", threshold: 6000, thresholdMax: 0 }, 99999, true, "cap zero"],
     [{ type: "order_subtotal", threshold: 6000, thresholdMax: "" }, 99999, true, "cap blank"],
-    [{ type: "collection_contains", threshold: 0 }, 0, false, "collection_contains, no items"],
-    [{ type: "collection_contains", threshold: 0 }, 1, true, "collection_contains, one item"],
+    // collection_contains counts items. No minQuantity means 1, which is how every
+    // tier saved before that field existed behaved.
+    [{ type: "collection_contains" }, 0, false, "contains: no items, no minQuantity"],
+    [{ type: "collection_contains" }, 1, true, "contains: one item, no minQuantity"],
+    [{ type: "collection_contains", minQuantity: 2 }, 1, false, "contains: 1 item, needs 2"],
+    [{ type: "collection_contains", minQuantity: 2 }, 2, true, "contains: 2 items, needs 2"],
+    [{ type: "collection_contains", minQuantity: 2 }, 5, true, "contains: 5 items, needs 2"],
+    [{ type: "collection_contains", minQuantity: 0 }, 1, true, "contains: minQuantity 0 means 1"],
+    [{ type: "collection_contains", minQuantity: null }, 1, true, "contains: minQuantity null means 1"],
     [{ type: "collection_subtotal", threshold: 5000, thresholdMax: 9000 }, 9000, true, "collection cap inclusive"],
     [{ type: "collection_subtotal", threshold: 5000, thresholdMax: 9000 }, 9500, false, "collection past cap"],
   ];
@@ -72,6 +82,80 @@ suite("qualifies(): threshold floor and optional cap");
     measured = value;
     const got = qualifies(tier, {});
     check(got === expected, `${label} (value=${value}) -> ${got}`, `expected ${expected}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// money() — minor units AND presentment currency, both converted to shop currency
+// ---------------------------------------------------------------------------
+suite("money(): converts minor units and presentment currency to shop currency");
+{
+  // presentmentRate() reads window.Shopify.currency.rate, so both globals are
+  // injected. A wrong-direction conversion (multiply instead of divide) fails the
+  // PKR case below, which is the point of testing with a real-world rate.
+  const withRate = (rate) => {
+    const win = rate === undefined ? {} : { Shopify: { currency: { rate } } };
+    return new Function(
+      "window",
+      "Shopify",
+      lift("presentmentRate", "") + "\nreturn " + lift("money", "cents"),
+    )(win, win.Shopify);
+  };
+
+  const cases = [
+    [undefined, 1000, 10, "no Shopify global at all"],
+    [1, 1000, 10, "rate 1 (single-currency store)"],
+    ["1.0", 1000, 10, "rate as a string, as Shopify publishes it"],
+    // Shop in PKR, customer browsing in USD. A 10,000 PKR cart shows as $36.
+    [0.0036, 3600, 10000, "PKR shop, USD visitor — converts back to shop currency"],
+    [0, 1000, 10, "rate 0 falls back to 1 rather than dividing by zero"],
+    ["abc", 1000, 10, "unparseable rate falls back to 1"],
+    [-2, 1000, 10, "negative rate falls back to 1"],
+  ];
+
+  for (const [rate, cents, expected, label] of cases) {
+    const got = withRate(rate)(cents);
+    check(got === expected, `${label} -> ${got}`, `expected ${expected}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// measure() — collection_contains counts units, not lines
+// ---------------------------------------------------------------------------
+suite("measure(): collection_contains counts units, not lines");
+{
+  const stubs = {
+    realLines: (cart) => cart.items,
+    money: (cents) => cents / 100,
+    lineValue: (l) => l.final_line_price,
+  };
+  const measure = new Function(
+    ...Object.keys(stubs),
+    "return " + lift("measure", "tier, cart"),
+  )(...Object.values(stubs));
+
+  const tier = { type: "collection_contains", collectionProductIds: [1, 2] };
+  const cart = (items) => ({ items });
+
+  const cases = [
+    [[{ product_id: 1, quantity: 5 }], 5, "5 of one collection product counts as 5"],
+    [
+      [{ product_id: 1, quantity: 2 }, { product_id: 2, quantity: 3 }],
+      5,
+      "2 + 3 across two lines counts as 5",
+    ],
+    [[{ product_id: 9, quantity: 7 }], 0, "products outside the collection don't count"],
+    [
+      [{ product_id: 1, quantity: 1 }, { product_id: 9, quantity: 9 }],
+      1,
+      "only the collection line is counted",
+    ],
+    [[], 0, "empty cart"],
+  ];
+
+  for (const [items, expected, label] of cases) {
+    const got = measure(tier, cart(items));
+    check(got === expected, `${label} -> ${got}`, `expected ${expected}`);
   }
 }
 

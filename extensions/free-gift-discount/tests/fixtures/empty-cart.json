@@ -3,11 +3,14 @@
     "export": "cart-lines-discounts-generate-run",
     "target": "cart.lines.discounts.generate.run",
     "input": {
+      "presentmentCurrencyRate": 1,
       "cart": {
         "lines": []
       },
       "discount": {
-        "discountClasses": ["PRODUCT"],
+        "discountClasses": [
+          "PRODUCT"
+        ],
         "metafield": {
           "jsonValue": {
             "tiers": [

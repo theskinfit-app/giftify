@@ -3,6 +3,7 @@
     "export": "cart-lines-discounts-generate-run",
     "target": "cart.lines.discounts.generate.run",
     "input": {
+      "presentmentCurrencyRate": 1,
       "cart": {
         "lines": [
           {
@@ -18,7 +19,8 @@
               "product": {
                 "id": "gid://shopify/Product/COLL_A"
               }
-            }
+            },
+            "quantity": 1
           },
           {
             "id": "gid://shopify/CartLine/g5",
@@ -35,7 +37,8 @@
               "product": {
                 "id": "gid://shopify/Product/Gg5"
               }
-            }
+            },
+            "quantity": 1
           },
           {
             "id": "gid://shopify/CartLine/gc",
@@ -52,7 +55,8 @@
               "product": {
                 "id": "gid://shopify/Product/Ggc"
               }
-            }
+            },
+            "quantity": 1
           }
         ]
       },

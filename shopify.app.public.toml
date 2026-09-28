@@ -4,7 +4,7 @@
 #
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "2ad9f02ada969b7c29dd77ac931f7d71"
+client_id = "23a0ffa51564bd0d1ffad7548ee58cc9"
 name = "Giftify: Tiered Free Gifts"
 
 # TODO: replace both of these with the Railway domain once the service exists.

@@ -7,18 +7,17 @@
 client_id = "23a0ffa51564bd0d1ffad7548ee58cc9"
 name = "Giftify: Tiered Free Gifts"
 
-# TODO: replace both of these with the Railway domain once the service exists.
-# They are the only two lines that need to change.
-application_url = "https://example.com"
+application_url = "https://giftify-production.up.railway.app"
 embedded = true
 
 [build]
-# TRUE is correct for now: no merchant has this app installed, so letting
-# `shopify app dev` point the app at a temporary tunnel is exactly what you want.
-# Flip it to FALSE the moment a real URL is in application_url and anyone is using the
-# app — otherwise the next `shopify app dev` silently takes production down. That is
-# what happened to the custom app.
-automatically_update_urls_on_dev = true
+# FALSE now that application_url points at the real service. Left true, the next
+# `shopify app dev` would silently overwrite it with a temporary tunnel and take the
+# deployed app down — which is exactly what happened to the custom app.
+#
+# To develop against a tunnel again, don't flip this: link a separate development app
+# and switch to it with `shopify app config use`.
+automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-07"
@@ -69,5 +68,4 @@ access.storefront = "none"
 [auth]
 # /auth/callback comes from authPathPrefix in app/shopify.server.js. Do not change this
 # to /api/auth — that is not a route this app serves.
-# TODO: same Railway domain as application_url above.
-redirect_urls = [ "https://example.com/auth/callback" ]
+redirect_urls = [ "https://giftify-production.up.railway.app/auth/callback" ]

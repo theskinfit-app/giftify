@@ -1,236 +1,196 @@
-# Shopify App Template - React Router
+# Giftify: Tiered Free Gifts
 
-This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [React Router](https://reactrouter.com/). It was forked from the [Shopify Remix app template](https://github.com/Shopify/shopify-app-template-remix) and converted to React Router.
+A Shopify app that gives customers a free gift when their cart meets a condition the
+merchant sets. Tiers stack, so a 5,000 tier and a 10,000 tier both pay out on a 12,000
+cart.
 
-Rather than cloning this repo, follow the [Quick Start steps](https://github.com/Shopify/shopify-app-template-react-router#quick-start).
+Three kinds of condition:
 
-Visit the [`shopify.dev` documentation](https://shopify.dev/docs/api/shopify-app-react-router) for more details on the React Router app package.
+| Condition | Measured on |
+|---|---|
+| `order_subtotal` | The whole cart, in the shop's currency |
+| `collection_subtotal` | Only items from one collection |
+| `collection_contains` | The **number of items** from one collection |
 
-## Upgrading from Remix
+Subtotal tiers can also take an upper bound, so a tier can be a window — "a gift on
+orders between 6,000 and 7,999" — rather than a floor.
 
-If you have an existing Remix app that you want to upgrade to React Router, please follow the [upgrade guide](https://github.com/Shopify/shopify-app-template-react-router/wiki/Upgrading-from-Remix). Otherwise, please follow the quick start guide below.
+---
 
-## Quick start
+## The one thing to understand first
 
-### Prerequisites
+**A gift is an ordinary product that the app's discount function makes free.**
 
-Before you begin, you'll need to [download and install the Shopify CLI](https://shopify.dev/docs/apps/tools/cli/getting-started) if you haven't already.
+The theme app embed decides *which* gift belongs in the cart and adds or removes the
+line. A Shopify Function decides *which* gift lines are free. Both read the same tier
+configuration, so they cannot disagree.
 
-### Setup
+Two earlier designs are dead ends. Both are documented at the top of
+[`app/models/gift-discounts.server.js`](app/models/gift-discounts.server.js), and
+neither should be reintroduced as a "simplification":
 
-```shell
-shopify app init --template=https://github.com/Shopify/shopify-app-template-react-router
+1. **One native Buy X Get Y discount per tier.** A BXGY discount *consumes* the cart
+   items that satisfy its condition, so separate tiers competed for the same spend —
+   with three tiers, the third one's gift was never discounted.
+2. **A zero-priced gift variant and no discount at all.** It works, but it asks every
+   merchant to create dedicated 0-priced products, which anyone who finds them can buy
+   for nothing. It only existed because Shopify allows Functions from a *custom* app
+   solely on Shopify Plus stores. Public App Store apps have no such restriction, which
+   is what made the function approach possible here.
+
+### The safety net
+
+`dropPayableGifts` in the theme script removes any `_gift` line whose
+`final_line_price > 0`. It never assumes the discount worked — if the merchant paused
+it, or another promotion won the line, the gift comes back out rather than the customer
+being charged for it. Do not remove this.
+
+---
+
+## Architecture
+
+```
+app/                                   Embedded admin app (React Router 7, SSR)
+  models/gift-discounts.server.js      ALL tier logic — read this before changing anything
+  routes/
+    app._index.jsx                     Tier list: health banner, pause/resume/delete
+    app.gifts.$id.jsx                  Tier editor
+    app.support.jsx                    Merchant-facing help
+    webhooks.compliance.jsx            GDPR topics, required for App Store review
+extensions/
+  free-gift-theme/                     Theme app embed — runs on every storefront
+    blocks/free-gift.liquid            Injects the tier config and the toast markup
+    assets/free-gift.js                Adds/removes gifts, reconciles, guards quantity
+  free-gift-discount/                  Discount Function — makes gift lines free
+  free-gift-validation/                Validation Function — blocks checkout on gift qty > 1
+test/                                  Dependency-free node tests for the above
+prisma/schema.prisma                   Shopify sessions only
 ```
 
-### Local Development
+### Where state lives
 
-```shell
-shopify app dev
+**Tier configuration is a shop metafield, not a database row** — namespace `free_gift`,
+key `gift_tiers`, with `storefront: PUBLIC_READ` so the Liquid block can read it
+directly. Postgres stores nothing but Shopify sessions, which means the database is
+disposable: losing it costs a re-authentication and nothing else.
+
+```
+Admin UI  →  metafieldsSet(free_gift.gift_tiers)  →  Liquid block reads it
+          →  window.__FREE_GIFT_TIERS__  →  free-gift.js decides and mutates the cart
 ```
 
-Press P to open the URL to your app. Once you click install, you can start development.
+Gift cart lines carry the line property `_gift`, whose value is the tier id. That
+property is the join key across the theme script, both functions and the quantity
+guard. **Never rename it.**
 
-Local development is powered by [the Shopify CLI](https://shopify.dev/docs/apps/tools/cli). It logs into your account, connects to an app, provides environment variables, updates remote config, creates a tunnel and provides commands to generate extensions.
+---
 
-### Authenticating and querying data
+## Setup
 
-To authenticate and query data you can use the `shopify` const that is exported from `/app/shopify.server.js`:
+Requires Node 20.19+ (or 22.12+) and the [Shopify CLI](https://shopify.dev/docs/apps/tools/cli/getting-started).
+
+```bash
+npm install
+npm run dev          # shopify app dev
+```
+
+Local development runs on SQLite; production runs on Postgres. The SQLite schema is
+generated from `prisma/schema.prisma` by `scripts/dev-schema.mjs` on every dev run, so
+there is only ever one source of truth. `.env` needs a single line:
+
+```
+DATABASE_URL="file:./dev.sqlite"
+```
+
+Production needs `DATABASE_URL` (Postgres), `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`,
+`SHOPIFY_APP_URL` and `SCOPES`.
+
+### Commands
+
+```bash
+npm run build            # react-router build
+npm run lint
+npm run deploy           # shopify app deploy — pushes extensions + config
+
+npm run test:theme       # theme script: thresholds, gift-quantity invariant, write guard
+npm run test:validation  # validation function logic and its fixtures
+```
+
+Both test scripts are plain node — no runner, no dependencies. They lift the **real
+function source** out of the shipped files and run it against stubs, so they cannot
+drift into testing a stale copy.
+
+The two function extensions have their own fixture suites, which compile to Wasm first:
+
+```bash
+cd extensions/free-gift-discount && npm test
+cd extensions/free-gift-validation && npm test
+```
+
+### Debugging a storefront
 
 ```js
-export async function loader({ request }) {
-  const { admin } = await shopify.authenticate.admin(request);
-
-  const response = await admin.graphql(`
-    {
-      products(first: 25) {
-        nodes {
-          title
-          description
-        }
-      }
-    }`);
-
-  const {
-    data: {
-      products: { nodes },
-    },
-  } = await response.json();
-
-  return nodes;
-}
+localStorage.setItem('free_gift_debug', '1')   // then reload for verbose logs
+__freeGiftInspect()                            // per-line and per-tier decision dump
+__freeGiftReset()                              // clear blocked tiers and the mutation budget
 ```
 
-This template comes pre-configured with examples of:
-
-1. Setting up your Shopify app in [/app/shopify.server.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/shopify.server.ts)
-2. Querying data using Graphql. Please see: [/app/routes/app.\_index.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/app._index.tsx).
-3. Responding to webhooks. Please see [/app/routes/webhooks.tsx](https://github.com/Shopify/shopify-app-template-react-router/blob/main/app/routes/webhooks.app.uninstalled.tsx).
-
-Please read the [documentation for @shopify/shopify-app-react-router](https://shopify.dev/docs/api/shopify-app-react-router) to see what other API's are available.
-
-## Shopify Dev MCP
-
-This template is configured with the Shopify Dev MCP. This instructs [Cursor](https://cursor.com/), [GitHub Copilot](https://github.com/features/copilot) and [Claude Code](https://claude.com/product/claude-code) and [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) to use the Shopify Dev MCP.
-
-For more information on the Shopify Dev MCP please read [the documentation](https://shopify.dev/docs/apps/build/devmcp).
-
-## Deployment
-
-### Application Storage
-
-This template uses [Prisma](https://www.prisma.io/) to store session data, by default using an [SQLite](https://www.sqlite.org/index.html) database.
-The database is defined as a Prisma schema in `prisma/schema.prisma`.
-
-This use of SQLite works in production if your app runs as a single instance.
-The database that works best for you depends on the data your app needs and how it is queried.
-Here’s a short list of databases providers that provide a free tier to get started:
-
-| Database   | Type             | Hosters                                                                                                                                                                                                                                    |
-| ---------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| MySQL      | SQL              | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-mysql), [Planet Scale](https://planetscale.com/), [Amazon Aurora](https://aws.amazon.com/rds/aurora/), [Google Cloud SQL](https://cloud.google.com/sql/docs/mysql) |
-| PostgreSQL | SQL              | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-postgresql), [Amazon Aurora](https://aws.amazon.com/rds/aurora/), [Google Cloud SQL](https://cloud.google.com/sql/docs/postgres)                                   |
-| Redis      | Key-value        | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-redis), [Amazon MemoryDB](https://aws.amazon.com/memorydb/)                                                                                                        |
-| MongoDB    | NoSQL / Document | [Digital Ocean](https://www.digitalocean.com/products/managed-databases-mongodb), [MongoDB Atlas](https://www.mongodb.com/atlas/database)                                                                                                  |
-
-To use one of these, you can use a different [datasource provider](https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#datasource) in your `schema.prisma` file, or a different [SessionStorage adapter package](https://github.com/Shopify/shopify-api-js/blob/main/packages/shopify-api/docs/guides/session-storage.md).
-
-### Build
-
-Build the app by running the command below with the package manager of your choice:
-
-Using yarn:
-
-```shell
-yarn build
-```
-
-Using npm:
-
-```shell
-npm run build
-```
-
-Using pnpm:
-
-```shell
-pnpm run build
-```
-
-## Hosting
-
-When you're ready to set up your app in production, you can follow [our deployment documentation](https://shopify.dev/docs/apps/launch/deployment) to host it externally. From there, you have a few options:
-
-- [Google Cloud Run](https://shopify.dev/docs/apps/launch/deployment/deploy-to-google-cloud-run): This tutorial is written specifically for this example repo, and is compatible with the extended steps included in the subsequent [**Build your app**](tutorial) in the **Getting started** docs. It is the most detailed tutorial for taking a React Router-based Shopify app and deploying it to production. It includes configuring permissions and secrets, setting up a production database, and even hosting your apps behind a load balancer across multiple regions.
-- [Fly.io](https://fly.io/docs/js/shopify/): Leverages the Fly.io CLI to quickly launch Shopify apps to a single machine.
-- [Render](https://render.com/docs/deploy-shopify-app): This tutorial guides you through using Docker to deploy and install apps on a Dev store.
-- [Manual deployment guide](https://shopify.dev/docs/apps/launch/deployment/deploy-to-hosting-service): This resource provides general guidance on the requirements of deployment including environment variables, secrets, and persistent data.
-
-When you reach the step for [setting up environment variables](https://shopify.dev/docs/apps/deployment/web#set-env-vars), you also need to set the variable `NODE_ENV=production`.
-
-## Gotchas / Troubleshooting
-
-### Database tables don't exist
-
-If you get an error like:
-
-```
-The table `main.Session` does not exist in the current database.
-```
-
-Create the database for Prisma. Run the `setup` script in `package.json` using `npm`, `yarn` or `pnpm`.
-
-### Navigating/redirecting breaks an embedded app
-
-Embedded apps must maintain the user session, which can be tricky inside an iFrame. To avoid issues:
-
-1. Use `Link` from `react-router` or `@shopify/polaris`. Do not use `<a>`.
-2. Use `redirect` returned from `authenticate.admin`. Do not use `redirect` from `react-router`
-3. Use `useSubmit` from `react-router`.
-
-This only applies if your app is embedded, which it will be by default.
-
-### Webhooks: shop-specific webhook subscriptions aren't updated
-
-If you are registering webhooks in the `afterAuth` hook, using `shopify.registerWebhooks`, you may find that your subscriptions aren't being updated.
-
-Instead of using the `afterAuth` hook declare app-specific webhooks in the `shopify.app.toml` file. This approach is easier since Shopify will automatically sync changes every time you run `deploy` (e.g: `npm run deploy`). Please read these guides to understand more:
-
-1. [app-specific vs shop-specific webhooks](https://shopify.dev/docs/apps/build/webhooks/subscribe#app-specific-subscriptions)
-2. [Create a subscription tutorial](https://shopify.dev/docs/apps/build/webhooks/subscribe/get-started?deliveryMethod=https)
-
-If you do need shop-specific webhooks, keep in mind that the package calls `afterAuth` in 2 scenarios:
-
-- After installing the app
-- When an access token expires
-
-During normal development, the app won't need to re-authenticate most of the time, so shop-specific subscriptions aren't updated. To force your app to update the subscriptions, uninstall and reinstall the app. Revisiting the app will call the `afterAuth` hook.
-
-### Webhooks: Admin created webhook failing HMAC validation
-
-Webhooks subscriptions created in the [Shopify admin](https://help.shopify.com/en/manual/orders/notifications/webhooks) will fail HMAC validation. This is because the webhook payload is not signed with your app's secret key.
-
-The recommended solution is to use [app-specific webhooks](https://shopify.dev/docs/apps/build/webhooks/subscribe#app-specific-subscriptions) defined in your toml file instead. Test your webhooks by triggering events manually in the Shopify admin(e.g. Updating the product title to trigger a `PRODUCTS_UPDATE`).
-
-### Webhooks: Admin object undefined on webhook events triggered by the CLI
-
-When you trigger a webhook event using the Shopify CLI, the `admin` object will be `undefined`. This is because the CLI triggers an event with a valid, but non-existent, shop. The `admin` object is only available when the webhook is triggered by a shop that has installed the app. This is expected.
-
-Webhooks triggered by the CLI are intended for initial experimentation testing of your webhook configuration. For more information on how to test your webhooks, see the [Shopify CLI documentation](https://shopify.dev/docs/apps/tools/cli/commands#webhook-trigger).
-
-### Incorrect GraphQL Hints
-
-By default the [graphql.vscode-graphql](https://marketplace.visualstudio.com/items?itemName=GraphQL.vscode-graphql) extension for will assume that GraphQL queries or mutations are for the [Shopify Admin API](https://shopify.dev/docs/api/admin). This is a sensible default, but it may not be true if:
-
-1. You use another Shopify API such as the storefront API.
-2. You use a third party GraphQL API.
-
-If so, please update [.graphqlrc.ts](https://github.com/Shopify/shopify-app-template-react-router/blob/main/.graphqlrc.ts).
-
-### Using Defer & await for streaming responses
-
-By default the CLI uses a cloudflare tunnel. Unfortunately cloudflare tunnels wait for the Response stream to finish, then sends one chunk. This will not affect production.
-
-To test [streaming using await](https://reactrouter.com/api/components/Await#await) during local development we recommend [localhost based development](https://shopify.dev/docs/apps/build/cli-for-apps/networking-options#localhost-based-development).
-
-### "nbf" claim timestamp check failed
-
-This is because a JWT token is expired. If you are consistently getting this error, it could be that the clock on your machine is not in sync with the server. To fix this ensure you have enabled "Set time and date automatically" in the "Date and Time" settings on your computer.
-
-### Using MongoDB and Prisma
-
-If you choose to use MongoDB with Prisma, there are some gotchas in Prisma's MongoDB support to be aware of. Please see the [Prisma SessionStorage README](https://www.npmjs.com/package/@shopify/shopify-app-session-storage-prisma#mongodb).
-
-### Unable to require(`C:\...\query_engine-windows.dll.node`).
-
-Unable to require(`C:\...\query_engine-windows.dll.node`).
-The Prisma engines do not seem to be compatible with your system.
-
-query_engine-windows.dll.node is not a valid Win32 application.
-
-**Fix:** Set the environment variable:
-
-```shell
-PRISMA_CLIENT_ENGINE_TYPE=binary
-```
-
-This forces Prisma to use the binary engine mode, which runs the query engine as a separate process and can work via emulation on Windows ARM64.
-
-## Resources
-
-React Router:
-
-- [React Router docs](https://reactrouter.com/home)
-
-Shopify:
-
-- [Intro to Shopify apps](https://shopify.dev/docs/apps/getting-started)
-- [Shopify App React Router docs](https://shopify.dev/docs/api/shopify-app-react-router)
-- [Shopify CLI](https://shopify.dev/docs/apps/tools/cli)
-- [Shopify App Bridge](https://shopify.dev/docs/api/app-bridge-library).
-- [Polaris Web Components](https://shopify.dev/docs/api/app-home/polaris-web-components).
-- [App extensions](https://shopify.dev/docs/apps/app-extensions/list)
-- [Shopify Functions](https://shopify.dev/docs/api/functions)
-
-Internationalization:
-
-- [Internationalizing your app](https://shopify.dev/docs/apps/best-practices/internationalization/getting-started)
+If no gift ever appears, check the theme app embed is switched on first —
+**Online Store → Themes → Customize → App embeds → Free Gift**. It is off by default
+and is by far the most common cause.
+
+---
+
+## Things that will bite you
+
+**`automatically_update_urls_on_dev = false` is load-bearing.** `application_url` points
+at production, and `shopify app dev` would otherwise overwrite it with a temporary
+tunnel and take the live app down.
+
+**`shopify app config use` decides which app you deploy to.** Run `shopify app info`
+before any deploy.
+
+**The `[events]` block in the app config is a required no-op.** Shopify CLI 4.7.0 fails
+`deploy` and `dev` with `[events]: Required` without it, and its `api_version` must be
+`"unstable"` — do not "fix" it to match `[webhooks].api_version`.
+
+**The function test suites need a long hook timeout.** Compiling to Wasm takes minutes.
+The scaffold's 45-second `beforeAll` timeout made every test report as *skipped*, which
+reads exactly like success — the suite had never once run.
+
+**Money is normalised from presentment to shop currency in two places, and they must
+agree.** Cart amounts arrive in the customer's currency; thresholds are typed in the
+shop's. The theme divides by `Shopify.currency.rate`; the discount function divides by
+`input.presentmentCurrencyRate`. On a single-currency store both are 1, so a regression
+here stays invisible until a Shopify Markets merchant installs the app.
+
+**The admin UI uses Polaris web components** (`<s-page>`, `<s-banner>`…), not
+`@shopify/polaris`. Do not add React Polaris imports.
+
+**The discount function targets `cart.lines.discounts.generate.run` only.** The
+scaffold's delivery-options target was removed deliberately — declaring it gives the
+discount the SHIPPING class, and this app has no business touching shipping.
+
+### Working on `extensions/free-gift-theme/assets/free-gift.js`
+
+This ships to unknown merchant themes, so the constraints are unusual. The file is
+commented with the *reason* behind each choice; read the comment before changing the
+code under it.
+
+- **ES5 on purpose** (`var`, `function`, IIFE) — broad storefront support, no build step.
+- **Never touch theme-specific DOM.** Write through `Shopify.actions.updateCart`, detect
+  through `shopify:cart:lines-update` (with fetch/XHR interception as a fallback), read
+  through `/cart.js`, and refresh through the theme's own event protocols.
+- **`origFetch` discipline.** The script patches `window.fetch`; its own calls must use
+  the captured original or every gift mutation re-triggers reconciliation.
+- **Thresholds are measured on the customer's own lines only.** Counting gift lines
+  creates a feedback loop where a gift pushes the cart over or under its own threshold.
+- **The interceptor is a pure observer with one exception:** it clamps gift line
+  quantities down to 1 in flight, and a capture-phase `submit` listener does the same to
+  the cart form's `updates` inputs. Index-based updates are clamped only when the body's
+  line count matches the last-read cart — a stale picture must never rewrite the wrong
+  line. The checkout button is never blocked.
+
+## Licence
+
+UNLICENSED. All rights reserved.

@@ -1,0 +1,71 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "presentmentCurrencyRate": 1,
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/own1",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "5730.0" } },
+            "giftTier": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/COLL_A" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/gift",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "300.0" } },
+            "giftTier": { "value": "t_coll" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/GIFT1" }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "appConfig": null,
+        "legacyConfig": {
+          "jsonValue": {
+            "tiers": [
+              {
+                "id": "t_coll",
+                "name": "Free gift on order above 4999",
+                "type": "collection_subtotal",
+                "threshold": 4999,
+                "thresholdMax": null,
+                "minQuantity": 1,
+                "enabled": true,
+                "collectionProductGids": ["gid://shopify/Product/COLL_A"]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "Free gift on order above 4999",
+                "targets": [
+                  { "cartLine": { "id": "gid://shopify/CartLine/gift", "quantity": 1 } }
+                ],
+                "value": { "percentage": { "value": 100 } }
+              }
+            ],
+            "selectionStrategy": "ALL"
+          }
+        }
+      ]
+    }
+  }
+}

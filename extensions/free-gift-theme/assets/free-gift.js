@@ -648,23 +648,60 @@
   // re-reading it here just to hand it over was one more round trip sitting on
   // the critical path between the gift landing and the drawer showing it.
   function refreshTheme(cart) {
-    // Only trust the events if there's some sign this theme listens for them.
-    // Otherwise an old theme would silently keep showing a stale cart.
+    // Only skip the fallback when there is real evidence the theme acts on one of
+    // the events we just dispatched.
+    //
+    // canUseActions() used to count as evidence here, and that was the Dawn bug.
+    // It only says the PLATFORM provides Shopify.actions — it says nothing about
+    // whether the THEME listens. Dawn has the actions available, ignores both of
+    // our events (it routes cart updates through its own internal pub/sub, not a
+    // DOM event), and has no cart-items-component. So `listens` came out true, we
+    // returned here having refreshed nothing, and the server cart and the rendered
+    // cart silently diverged — the app looked completely dead on Dawn.
+    //
+    // What does count:
+    //   standardEventsSeen  — we watched this theme EMIT the standard event, so it
+    //                         speaks the protocol we just spoke back to it.
+    //   cart-items-component — Horizon's cart component, which listens for both.
     var listens =
-      standardEventsSeen || canUseActions() || !!document.querySelector("cart-items-component");
-    if (notifyThemeOfCartChange(cart || null) && listens) {
+      standardEventsSeen || !!document.querySelector("cart-items-component");
+
+    var sent = notifyThemeOfCartChange(cart || null);
+    if (sent && listens) {
       debug("notified the theme", lastSections ? "(with rendered sections)" : "(no sections)");
       return Promise.resolve(null);
     }
+    debug(
+      "theme shows no sign of listening (standardEventsSeen=" + standardEventsSeen +
+        ") — re-rendering its cart sections instead",
+    );
     return legacyRefresh();
+  }
+
+  /**
+   * True when the customer is looking at the cart page itself.
+   *
+   * This is the only place a stale cart is actually worth a page reload. Anywhere
+   * else — a product page, a collection — there may be nothing cart-shaped on
+   * screen at all, and reloading under the customer is far worse than a drawer
+   * that catches up on their next navigation. `/cart` is a platform route, not a
+   * theme's choice, so this is safe to key on.
+   */
+  function onCartPage() {
+    return /\/cart(\/|\?|$)/.test(window.location.pathname + window.location.search);
+  }
+
+  function giveUpRefreshing(why) {
+    debug("could not re-render the theme's cart:", why);
+    if (onCartPage()) return reloadPage();
+    return Promise.resolve(null);
   }
 
   function legacyRefresh() {
     // Themes that understood neither event: bundled section rendering using the
-    // ids the theme itself asked for, and a reload if we never saw any — a stale
-    // cart is worse than a reload.
+    // ids the theme itself asked for.
     var ids = themeCartSectionIds();
-    if (!ids) return reloadPage();
+    if (!ids) return giveUpRefreshing("never saw which sections this theme uses");
 
     return origFetch(ROOT + "cart/update.js", {
       method: "POST",
@@ -685,11 +722,13 @@
           el.outerHTML = html;
           swapped++;
         });
-        if (!swapped) return reloadPage();
+        if (!swapped) return giveUpRefreshing("none of those sections are on this page");
+        debug("re-rendered", swapped, "cart section(s)");
         // Nudge any theme/app listeners that watch for cart changes.
         document.documentElement.dispatchEvent(new CustomEvent("cart:refresh", { bubbles: true }));
+        return null;
       })
-      .catch(function () { return reloadPage(); });
+      .catch(function (e) { return giveUpRefreshing(e && e.message); });
   }
 
   function reloadPage() {

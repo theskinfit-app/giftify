@@ -44,14 +44,23 @@ const DISCOUNT_ID_KEY = "discount_node";
 const FUNCTION_HANDLE = "free-gift-discount";
 const DISCOUNT_TITLE = "Free Gift";
 
-// Matches the definition declared in shopify.app.*.toml:
+// Matches the definition declared in shopify.app.*.toml as
 //   [discount.metafields.app.function-configuration]
-// which the function reads as metafield(namespace: "$app", key: "function-configuration").
-// On the write side MetafieldInput documents the namespace as alphanumeric, hyphen
-// and underscore only, so the reserved `$app` form may be rejected there — hence the
-// fallback list rather than a single guess.
+// `app` is how the reserved namespace is spelled in TOML; `$app` is how it is spelled
+// in GraphQL, on both the read and the write side.
+//
+// There used to be a fallback here: try `$app`, and on any namespace error write to
+// `app` instead. That fallback is why the function returned no discounts on live
+// stores while everything else looked fine. `app` without the `$` is an ordinary
+// merchant namespace, so the write "succeeded" into a place the function never reads,
+// the save reported success, the tier list looked healthy, and every gift silently
+// failed to be discounted.
+//
+// There is deliberately no fallback now. If this namespace is rejected the merchant
+// gets an error, because a configuration nothing can read is worse than no save at
+// all. writeDiscountConfig reads the value back to make sure of it.
 const FN_CONFIG_KEY = "function-configuration";
-const FN_CONFIG_NAMESPACES = ["$app", "app"];
+const FN_CONFIG_NAMESPACE = "$app";
 
 const numId = (gid) => (gid ? Number(String(gid).split("/").pop()) : null);
 
@@ -84,11 +93,6 @@ const minQuantityOrOne = (raw) => {
 function isMissingDiscount(err) {
   const m = String(err?.message ?? "").toLowerCase();
   return m.includes("does not exist") || m.includes("not found");
-}
-
-function isNamespaceError(err) {
-  const m = String(err?.message ?? "").toLowerCase();
-  return m.includes("namespace");
 }
 
 async function gql(admin, query, variables) {
@@ -137,8 +141,43 @@ async function writeShopMetafield(admin, key, value, type = "json") {
   if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
 }
 
+// Shopify caps a json metafield at 128KB. Stop well short of it: going over is not
+// a clean failure, and the tier list has to survive one more tier being added.
+const METAFIELD_LIMIT_BYTES = 128 * 1024;
+const METAFIELD_SAFE_BYTES = Math.floor(METAFIELD_LIMIT_BYTES * 0.8);
+
+/**
+ * Refuse to save a tier list that will not fit, and say why.
+ *
+ * Collection tiers cache every product id in the collection, so a big collection
+ * blows the metafield limit. Until that design changes this is a real ceiling, and a
+ * merchant is owed a clear sentence about it rather than a save that appears to work
+ * and a gift that never appears.
+ */
+function assertTiersFit(tiers, json) {
+  const bytes = Buffer.byteLength(json, "utf8");
+  if (bytes <= METAFIELD_SAFE_BYTES) return;
+
+  const biggest = tiers
+    .filter((t) => (t.collectionProductIds?.length ?? 0) > 0)
+    .sort((a, b) => b.collectionProductIds.length - a.collectionProductIds.length)[0];
+
+  const which = biggest
+    ? `"${biggest.name}" uses a collection with ${biggest.collectionProductIds.length.toLocaleString()} products. `
+    : "";
+
+  throw new Error(
+    `This tier can't be saved: the configuration is ${Math.round(bytes / 1024)}KB and ` +
+      `Shopify allows ${Math.round(METAFIELD_LIMIT_BYTES / 1024)}KB. ${which}` +
+      "Collection tiers currently support collections of roughly 1,500 products or " +
+      "fewer in total. Use a smaller collection for now.",
+  );
+}
+
 async function persistTiers(admin, tiers) {
-  await writeShopMetafield(admin, SHOP_KEY, JSON.stringify(tiers));
+  const json = JSON.stringify(tiers);
+  assertTiersFit(tiers, json);
+  await writeShopMetafield(admin, SHOP_KEY, json);
 }
 
 /**
@@ -252,7 +291,7 @@ function functionConfig(tiers) {
   });
 }
 
-function discountInput(tiers, namespace) {
+function discountInput(tiers) {
   return {
     title: DISCOUNT_TITLE,
     functionHandle: FUNCTION_HANDLE,
@@ -262,64 +301,77 @@ function discountInput(tiers, namespace) {
     // promotion, so opt into combining with every class.
     combinesWith: { orderDiscounts: true, productDiscounts: true, shippingDiscounts: true },
     metafields: [
-      { namespace, key: FN_CONFIG_KEY, type: "json", value: functionConfig(tiers) },
+      {
+        namespace: FN_CONFIG_NAMESPACE,
+        key: FN_CONFIG_KEY,
+        type: "json",
+        value: functionConfig(tiers),
+      },
     ],
   };
 }
 
-/**
- * Run `mutate(namespace)` against each candidate namespace until one is accepted.
- * Only namespace rejections are retried; anything else is a real failure.
- */
-async function withConfigNamespace(mutate) {
-  let lastErr = null;
-  for (const ns of FN_CONFIG_NAMESPACES) {
-    try {
-      return await mutate(ns);
-    } catch (e) {
-      if (!isNamespaceError(e)) throw e;
-      lastErr = e;
-    }
-  }
-  throw lastErr ?? new Error("Could not write the function configuration metafield.");
-}
-
 async function createDiscount(admin, tiers) {
-  const id = await withConfigNamespace(async (namespace) => {
-    const d = await gql(
-      admin,
-      `#graphql
-      mutation CreateGiftDiscount($automaticAppDiscount: DiscountAutomaticAppInput!) {
-        discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
-          automaticAppDiscount { discountId }
-          userErrors { field message }
-        }
-      }`,
-      { automaticAppDiscount: discountInput(tiers, namespace) },
-    );
-    const errs = d.discountAutomaticAppCreate.userErrors;
-    if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
-    return d.discountAutomaticAppCreate.automaticAppDiscount.discountId;
-  });
+  const d = await gql(
+    admin,
+    `#graphql
+    mutation CreateGiftDiscount($automaticAppDiscount: DiscountAutomaticAppInput!) {
+      discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
+        automaticAppDiscount { discountId }
+        userErrors { field message }
+      }
+    }`,
+    { automaticAppDiscount: discountInput(tiers) },
+  );
+  const errs = d.discountAutomaticAppCreate.userErrors;
+  if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
+  const id = d.discountAutomaticAppCreate.automaticAppDiscount.discountId;
   await writeShopMetafield(admin, DISCOUNT_ID_KEY, id, "single_line_text_field");
   return id;
 }
 
 async function updateDiscount(admin, id, tiers) {
-  await withConfigNamespace(async (namespace) => {
+  const d = await gql(
+    admin,
+    `#graphql
+    mutation UpdateGiftDiscount($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
+      discountAutomaticAppUpdate(id: $id, automaticAppDiscount: $automaticAppDiscount) {
+        userErrors { field message }
+      }
+    }`,
+    { id, automaticAppDiscount: discountInput(tiers) },
+  );
+  const errs = d.discountAutomaticAppUpdate.userErrors;
+  if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
+}
+
+/**
+ * Read the configuration straight back off the discount.
+ *
+ * The mutation reporting no userErrors is not proof the function can see anything:
+ * that is exactly how the namespace bug hid for so long. Reading it back is the only
+ * check that matches what the function itself does at runtime.
+ */
+async function discountConfigIsReadable(admin, discountId) {
+  try {
     const d = await gql(
       admin,
       `#graphql
-      mutation UpdateGiftDiscount($id: ID!, $automaticAppDiscount: DiscountAutomaticAppInput!) {
-        discountAutomaticAppUpdate(id: $id, automaticAppDiscount: $automaticAppDiscount) {
-          userErrors { field message }
+      query GiftConfigCheck($id: ID!, $ns: String!, $key: String!) {
+        node(id: $id) {
+          ... on DiscountAutomaticNode {
+            metafield(namespace: $ns, key: $key) { value }
+          }
         }
       }`,
-      { id, automaticAppDiscount: discountInput(tiers, namespace) },
+      { id: discountId, ns: FN_CONFIG_NAMESPACE, key: FN_CONFIG_KEY },
     );
-    const errs = d.discountAutomaticAppUpdate.userErrors;
-    if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
-  });
+    return Boolean(d?.node?.metafield?.value);
+  } catch {
+    // Fail OPEN on a lookup failure: refusing the save because we could not verify
+    // would block a merchant over a transient read.
+    return true;
+  }
 }
 
 /**
@@ -328,14 +380,27 @@ async function updateDiscount(admin, id, tiers) {
  */
 async function syncDiscount(admin, tiers) {
   const storedId = await readShopMetafield(admin, DISCOUNT_ID_KEY);
-  if (!storedId) return createDiscount(admin, tiers);
-  try {
-    await updateDiscount(admin, storedId, tiers);
-    return storedId;
-  } catch (e) {
-    if (!isMissingDiscount(e)) throw e;
-    return createDiscount(admin, tiers);
+  let id = storedId;
+
+  if (!id) {
+    id = await createDiscount(admin, tiers);
+  } else {
+    try {
+      await updateDiscount(admin, id, tiers);
+    } catch (e) {
+      if (!isMissingDiscount(e)) throw e;
+      id = await createDiscount(admin, tiers);
+    }
   }
+
+  if (!(await discountConfigIsReadable(admin, id))) {
+    throw new Error(
+      "The gift configuration was saved but the discount function cannot read it " +
+        `(namespace "${FN_CONFIG_NAMESPACE}", key "${FN_CONFIG_KEY}"). No gift would ` +
+        "be made free, so the tier was not saved. Please report this.",
+    );
+  }
+  return id;
 }
 
 /**
@@ -399,6 +464,11 @@ export async function upsertTier(admin, form) {
   const idx = tiers.findIndex((t) => t.id === tier.id);
   if (idx >= 0) tiers[idx] = tier;
   else tiers.push(tier);
+
+  // Check the size BEFORE writing anything. syncDiscount runs first and would
+  // otherwise fail with a raw Shopify error after the discount had already been
+  // touched, leaving the store half-updated.
+  assertTiersFit(tiers, JSON.stringify(tiers));
 
   await removeLegacyBxgyDiscounts(admin, tiers);
   // The function is the source of truth for what is free, so it has to know about

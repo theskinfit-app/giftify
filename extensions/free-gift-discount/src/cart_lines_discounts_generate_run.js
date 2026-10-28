@@ -31,7 +31,11 @@ export function cartLinesDiscountsGenerateRun(input) {
   if (!input.cart.lines.length) return NO_DISCOUNTS;
   if (!input.discount.discountClasses.includes(DiscountClass.Product)) return NO_DISCOUNTS;
 
-  const config = input.discount.metafield?.jsonValue;
+  // See the input query for why there are two. `$app` is correct and current;
+  // `app` is where an earlier silent namespace fallback put the configuration on
+  // stores that are already live.
+  const config =
+    input.discount.appConfig?.jsonValue ?? input.discount.legacyConfig?.jsonValue;
   const tiers = config && Array.isArray(config.tiers) ? config.tiers : [];
   if (!tiers.length) return NO_DISCOUNTS;
 

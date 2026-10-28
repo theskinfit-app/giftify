@@ -64,7 +64,7 @@
         "discountClasses": [
           "PRODUCT"
         ],
-        "metafield": {
+        "appConfig": {
           "jsonValue": {
             "tiers": [
               {
@@ -93,7 +93,8 @@
               }
             ]
           }
-        }
+        },
+        "legacyConfig": null
       }
     },
     "output": {

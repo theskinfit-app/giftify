@@ -9,28 +9,44 @@
           {
             "id": "gid://shopify/CartLine/own1",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "10.0" } },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "10.0"
+              }
+            },
             "giftTier": null,
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/PLAIN" }
+              "product": {
+                "id": "gid://shopify/Product/PLAIN"
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/gift",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "1.08" } },
-            "giftTier": { "value": "t_order5k" },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "1.08"
+              }
+            },
+            "giftTier": {
+              "value": "t_order5k"
+            },
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/GIFT1" }
+              "product": {
+                "id": "gid://shopify/Product/GIFT1"
+              }
             }
           }
         ]
       },
       "discount": {
-        "discountClasses": ["PRODUCT"],
-        "metafield": {
+        "discountClasses": [
+          "PRODUCT"
+        ],
+        "appConfig": {
           "jsonValue": {
             "tiers": [
               {
@@ -44,7 +60,8 @@
               }
             ]
           }
-        }
+        },
+        "legacyConfig": null
       }
     },
     "output": {

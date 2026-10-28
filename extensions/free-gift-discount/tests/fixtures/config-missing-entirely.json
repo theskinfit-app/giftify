@@ -1,0 +1,41 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "presentmentCurrencyRate": 1,
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/own1",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "5730.0" } },
+            "giftTier": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/COLL_A" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/gift",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "300.0" } },
+            "giftTier": { "value": "t_coll" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/GIFT1" }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "appConfig": null,
+        "legacyConfig": null
+      }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

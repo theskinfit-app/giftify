@@ -9,28 +9,44 @@
           {
             "id": "gid://shopify/CartLine/own1",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "36.0" } },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "36.0"
+              }
+            },
             "giftTier": null,
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/PLAIN" }
+              "product": {
+                "id": "gid://shopify/Product/PLAIN"
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/gift",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "1.08" } },
-            "giftTier": { "value": "t_order5k" },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "1.08"
+              }
+            },
+            "giftTier": {
+              "value": "t_order5k"
+            },
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/GIFT1" }
+              "product": {
+                "id": "gid://shopify/Product/GIFT1"
+              }
             }
           }
         ]
       },
       "discount": {
-        "discountClasses": ["PRODUCT"],
-        "metafield": {
+        "discountClasses": [
+          "PRODUCT"
+        ],
+        "appConfig": {
           "jsonValue": {
             "tiers": [
               {
@@ -44,7 +60,8 @@
               }
             ]
           }
-        }
+        },
+        "legacyConfig": null
       }
     },
     "output": {
@@ -55,9 +72,18 @@
               {
                 "message": "Freebie over 5K",
                 "targets": [
-                  { "cartLine": { "id": "gid://shopify/CartLine/gift", "quantity": 1 } }
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/gift",
+                      "quantity": 1
+                    }
+                  }
                 ],
-                "value": { "percentage": { "value": 100 } }
+                "value": {
+                  "percentage": {
+                    "value": 100
+                  }
+                }
               }
             ],
             "selectionStrategy": "ALL"

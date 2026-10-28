@@ -86,6 +86,37 @@ suite("qualifies(): threshold floor, optional cap, collection item count");
 }
 
 // ---------------------------------------------------------------------------
+// onCartPage() — the only place a stale cart justifies reloading under the customer
+// ---------------------------------------------------------------------------
+suite("onCartPage(): true only on the real cart route");
+{
+  const at = (pathname, search = "") => {
+    const win = { location: { pathname, search } };
+    return new Function("window", "return " + lift("onCartPage", ""))(win)();
+  };
+
+  const cases = [
+    ["/cart", "", true, "the cart page"],
+    ["/cart/", "", true, "with a trailing slash"],
+    ["/cart", "?view=drawer", true, "with a query string"],
+    ["/en/cart", "", true, "behind a locale prefix"],
+    ["/en-gb/cart", "", true, "behind a locale and region prefix"],
+    // The ones that must NOT reload: a product or collection page has no stale cart
+    // worth throwing the customer's page away for.
+    ["/products/handbag", "", false, "a product page"],
+    ["/collections/cart-bags", "", false, "a collection whose handle contains 'cart'"],
+    ["/pages/cartoon", "", false, "a page whose handle starts with 'cart'"],
+    ["/products/shopping-cart", "", false, "a product whose handle ends in 'cart'"],
+    ["/", "", false, "the home page"],
+  ];
+
+  for (const [pathname, search, expected, label] of cases) {
+    const got = at(pathname, search);
+    check(got === expected, `${label} (${pathname}${search}) -> ${got}`, `expected ${expected}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // money() — minor units AND presentment currency, both converted to shop currency
 // ---------------------------------------------------------------------------
 suite("money(): converts minor units and presentment currency to shop currency");

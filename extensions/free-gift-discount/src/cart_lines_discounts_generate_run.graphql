@@ -24,7 +24,16 @@ query CartInput {
   }
   discount {
     discountClasses
-    metafield(namespace: "$app", key: "function-configuration") {
+    # Two reads on purpose. "$app" is the correct reserved namespace and the one the
+    # app writes today. "app" is where a silent fallback in an earlier version of
+    # upsertTier landed the configuration — a plain, unreserved namespace that
+    # nothing ever read, which made the function return no discounts at all while
+    # every other part of the app looked healthy. Reading both repairs those stores
+    # without the merchant having to touch anything.
+    appConfig: metafield(namespace: "$app", key: "function-configuration") {
+      jsonValue
+    }
+    legacyConfig: metafield(namespace: "app", key: "function-configuration") {
       jsonValue
     }
   }

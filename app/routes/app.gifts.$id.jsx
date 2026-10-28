@@ -1,7 +1,14 @@
 // app/routes/app.gifts.$id.jsx
 // Uses Polaris web components (loaded via polaris.js in root). No @shopify/polaris import.
 import { useState, useCallback } from "react";
-import { useLoaderData, useNavigate, useSubmit, useNavigation, redirect } from "react-router";
+import {
+  useActionData,
+  useLoaderData,
+  useNavigate,
+  useSubmit,
+  useNavigation,
+  redirect,
+} from "react-router";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { getTiers, getShopCurrency, upsertTier } from "../models/gift-discounts.server";
@@ -18,22 +25,32 @@ export async function loader({ request, params }) {
 export async function action({ request }) {
   const { admin } = await authenticate.admin(request);
   const f = await request.formData();
-  await upsertTier(admin, {
-    id: f.get("id") || undefined,
-    name: f.get("name"),
-    type: f.get("type"),
-    threshold: f.get("threshold"),
-    thresholdMax: f.get("thresholdMax"),
-    minQuantity: f.get("minQuantity"),
-    enabled: f.get("enabled") === "true",
-    collectionGid: f.get("collectionGid") || null,
-    giftProductGid: f.get("giftProductGid"),
-  });
+  // Without this, anything upsertTier throws escapes to the route error boundary,
+  // which in production renders a bare "Application error" with the message
+  // stripped. The merchant is then told nothing at all — and the messages this
+  // throws ("that collection is too large", "the function can't read its
+  // configuration") are exactly the ones they need to see.
+  try {
+    await upsertTier(admin, {
+      id: f.get("id") || undefined,
+      name: f.get("name"),
+      type: f.get("type"),
+      threshold: f.get("threshold"),
+      thresholdMax: f.get("thresholdMax"),
+      minQuantity: f.get("minQuantity"),
+      enabled: f.get("enabled") === "true",
+      collectionGid: f.get("collectionGid") || null,
+      giftProductGid: f.get("giftProductGid"),
+    });
+  } catch (e) {
+    return { ok: false, error: e?.message ?? "The tier could not be saved." };
+  }
   return redirect("/app");
 }
 
 export default function GiftEditor() {
   const { tier, currency } = useLoaderData();
+  const actionData = useActionData();
   const navigate = useNavigate();
   const submit = useSubmit();
   const saving = useNavigation().state === "submitting";
@@ -117,6 +134,12 @@ export default function GiftEditor() {
       <TitleBar title={tier ? "Edit tier" : "New tier"} />
       <s-section>
         <s-stack direction="block" gap="base">
+          {actionData?.error && (
+            <s-banner tone="critical" heading="This tier wasn't saved">
+              <s-paragraph>{actionData.error}</s-paragraph>
+            </s-banner>
+          )}
+
           <s-text-field
             label="Tier name"
             value={name}

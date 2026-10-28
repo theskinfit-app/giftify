@@ -220,11 +220,24 @@ export async function getShopCurrency(admin) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-/** Collection members in both shapes: numeric ids for the theme, GIDs for the function. */
+/**
+ * Collection members in both shapes: numeric ids for the theme, GIDs for the function.
+ *
+ * Every exit from this function used to be silent. A collection that came back null,
+ * one with more products than the paging loop covers, even an empty one — all of them
+ * returned `[]`, the tier saved happily, and the storefront then measured every cart
+ * as 0 against it. The tier simply never fired, with nothing anywhere to say why.
+ * Each of those cases now throws something a merchant can act on.
+ */
+const COLLECTION_PAGES = 20;
+const COLLECTION_PAGE_SIZE = 250;
+
 async function cacheCollectionProducts(admin, collectionGid) {
   const gids = [];
   let cursor = null;
-  for (let i = 0; i < 20; i++) {
+  let more = false;
+
+  for (let i = 0; i < COLLECTION_PAGES; i++) {
     const d = await gql(
       admin,
       `#graphql
@@ -239,11 +252,35 @@ async function cacheCollectionProducts(admin, collectionGid) {
       { id: collectionGid, cursor },
     );
     const conn = d?.collection?.products;
-    if (!conn) break;
+    if (!conn) {
+      throw new Error(
+        "That collection could not be read — it may have been deleted, or the app " +
+          "may not have access to it. Pick the collection again and save.",
+      );
+    }
     conn.nodes.forEach((n) => gids.push(n.id));
-    if (!conn.pageInfo.hasNextPage) break;
+    more = conn.pageInfo.hasNextPage;
+    if (!more) break;
     cursor = conn.pageInfo.endCursor;
   }
+
+  if (more) {
+    // The binding limit in practice is the metafield size, which assertTiersFit
+    // reports — quote the same number here so the two don't give different advice.
+    throw new Error(
+      `That collection has more than ${(COLLECTION_PAGES * COLLECTION_PAGE_SIZE).toLocaleString()} ` +
+        "products. Collection tiers currently support collections of roughly 1,500 " +
+        "products or fewer. Use a smaller collection for now.",
+    );
+  }
+
+  if (!gids.length) {
+    throw new Error(
+      "That collection is empty, so the tier could never give anything away. " +
+        "Add products to it, or pick a different collection.",
+    );
+  }
+
   return { gids, ids: gids.map(numId) };
 }
 

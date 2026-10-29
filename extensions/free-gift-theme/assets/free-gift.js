@@ -84,17 +84,46 @@
   // never handed out its gift again even after the customer changed the cart and
   // the condition was cleanly met. The block is about one cart state, so it must
   // expire when that state does.
+  // A block also EXPIRES. Tying it to the cart state alone was still too permanent:
+  // a shopper whose gifts were undiscounted for one moment — a stale read, a discount
+  // being republished — kept an empty cart for as long as they left it untouched,
+  // with no way back. A short life means a transient fault heals itself, while a real
+  // misconfiguration simply blocks again on the next attempt.
   var BLOCK_KEY = "free_gift_blocked";
+  var BLOCK_TTL_MS = 60000;
   var blocked = (function () {
     try { return JSON.parse(sessionStorage.getItem(BLOCK_KEY) || "{}") || {}; }
     catch (e) { return {}; }
   })();
+
   function blockTier(id, cartFingerprint) {
-    blocked[id] = cartFingerprint;
+    blocked[id] = { fingerprint: cartFingerprint, until: new Date().getTime() + BLOCK_TTL_MS };
     try { sessionStorage.setItem(BLOCK_KEY, JSON.stringify(blocked)); } catch (e) {}
   }
+
   function isBlocked(id, cartFingerprint) {
-    return Object.prototype.hasOwnProperty.call(blocked, id) && blocked[id] === cartFingerprint;
+    var entry = blocked[id];
+    if (!entry) return false;
+    // Entries written before blocks had an expiry were a bare fingerprint string.
+    if (typeof entry === "string") return entry === cartFingerprint;
+    if (entry.fingerprint !== cartFingerprint) return false;
+    if (new Date().getTime() >= entry.until) {
+      delete blocked[id];
+      try { sessionStorage.setItem(BLOCK_KEY, JSON.stringify(blocked)); } catch (e) {}
+      return false;
+    }
+    return true;
+  }
+
+  // How long to let Shopify finish recalculating automatic discounts before taking a
+  // cart read as the truth about what is and is not discounted. Only ever paid when
+  // something already looks wrong, so it costs nothing on the healthy path.
+  var DISCOUNT_SETTLE_MS = 700;
+
+  function settleThenReadCart() {
+    return new Promise(function (resolve) {
+      setTimeout(function () { resolve(readCart()); }, DISCOUNT_SETTLE_MS);
+    });
   }
 
   // ---- read (Ajax API — universal) -----------------------------------------
@@ -908,26 +937,64 @@
      *     failure. Remove it and block the tier for this cart, so we don't add and
      *     remove it on a loop (which is what desynced the theme).
      */
-    function dropPayableGifts(cart) {
-      var payable = [];
+    function payableGifts(cart) {
+      var ids = [];
       cart.items.forEach(function (l) {
-        if (isGift(l) && l.final_line_price > 0) payable.push(tierIdOf(l));
+        if (isGift(l) && l.final_line_price > 0) ids.push(tierIdOf(l));
       });
+      return ids;
+    }
+
+    function dropPayableGifts(cart) {
+      var payable = payableGifts(cart);
       if (!payable.length) return Promise.resolve({ cart: cart, payable: payable });
 
-      var fingerprint = realFingerprint(cart);
-      payable.forEach(function (id) {
-        if (qualifying[id]) {
-          debug("gift not discounted although its tier qualifies — blocking", id, "for this cart");
-          blockTier(id, fingerprint);
-        } else {
-          debug("gift no longer discounted because its tier lapsed — removing", id);
+      // Never act on the first read.
+      //
+      // Shopify recalculates automatic discounts after a cart mutation, not during
+      // it, so a /cart.js read taken immediately after adding a gift can legitimately
+      // show it at full price for a moment. Treating that moment as proof was
+      // catastrophic: a merchant watched three qualifying tiers hand out three gifts
+      // and then lose all three at once, every tier blocked, because one read landed
+      // in that window. The more gifts in the cart, the wider the window.
+      //
+      // So look again before doing anything irreversible. A gift that was only
+      // briefly undiscounted settles by itself and nothing happens.
+      return settleThenReadCart().then(function (fresh) {
+        var confirmed = payableGifts(fresh);
+        if (!confirmed.length) {
+          debug("gifts were undiscounted for a moment and settled on their own");
+          return { cart: fresh, payable: [] };
         }
-      });
 
-      return applyChanges([], payable, cart)
-        .then(function (after) { return after || readCart(); })
-        .then(function (fresh) { return { cart: fresh, payable: payable }; });
+        var fingerprint = realFingerprint(fresh);
+        var giftCount = fresh.items.filter(isGift).length;
+        // Every gift at once is a statement about the discount, not about the tiers.
+        // Removing them is still required — a gift must never be charged for — but
+        // poisoning each tier on top of that turns one bad minute into an empty cart
+        // the shopper cannot recover from. The blocks still go on, because otherwise
+        // we would add and remove on a loop, but they expire.
+        var wholesale = confirmed.length > 1 && confirmed.length === giftCount;
+        if (wholesale) {
+          debug(
+            "every gift in the cart is undiscounted (" + confirmed.length + ") — this " +
+              "looks like the discount itself, not the tiers",
+          );
+        }
+
+        confirmed.forEach(function (id) {
+          if (qualifying[id]) {
+            debug("gift still not discounted although its tier qualifies — blocking", id);
+            blockTier(id, fingerprint);
+          } else {
+            debug("gift no longer discounted because its tier lapsed — removing", id);
+          }
+        });
+
+        return applyChanges([], confirmed, fresh)
+          .then(function (after) { return after || readCart(); })
+          .then(function (settled) { return { cart: settled, payable: confirmed }; });
+      });
     }
 
     function finish(cart, payable) {

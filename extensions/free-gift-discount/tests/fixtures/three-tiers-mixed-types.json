@@ -1,0 +1,147 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "presentmentCurrencyRate": 1,
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/own1",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "5730.0" } },
+            "giftTier": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/COLL_A1" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/own2",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "3838.0" } },
+            "giftTier": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/COLL_A2" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/own3",
+            "quantity": 2,
+            "cost": { "subtotalAmount": { "amount": "2750.0" } },
+            "giftTier": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/COLL_B1" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/gift1",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "900.0" } },
+            "giftTier": { "value": "t_coll_sub" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/GIFT1" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/gift2",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "1200.0" } },
+            "giftTier": { "value": "t_order" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/GIFT2" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/gift3",
+            "quantity": 1,
+            "cost": { "subtotalAmount": { "amount": "450.0" } },
+            "giftTier": { "value": "t_coll_has" },
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/GIFT3" }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "appConfig": {
+          "jsonValue": {
+            "tiers": [
+              {
+                "id": "t_coll_sub",
+                "name": "ST London Free gift on order above 4999",
+                "type": "collection_subtotal",
+                "threshold": 4999,
+                "thresholdMax": null,
+                "minQuantity": 1,
+                "enabled": true,
+                "collectionProductGids": [
+                  "gid://shopify/Product/COLL_A1",
+                  "gid://shopify/Product/COLL_A2"
+                ]
+              },
+              {
+                "id": "t_order",
+                "name": "get free gift on 8000",
+                "type": "order_subtotal",
+                "threshold": 7999,
+                "thresholdMax": null,
+                "minQuantity": 1,
+                "enabled": true
+              },
+              {
+                "id": "t_coll_has",
+                "name": "Buy from klean Beauty and get 1 free",
+                "type": "collection_contains",
+                "threshold": 0,
+                "thresholdMax": null,
+                "minQuantity": 1,
+                "enabled": true,
+                "collectionProductGids": ["gid://shopify/Product/COLL_B1"]
+              }
+            ]
+          }
+        },
+        "legacyConfig": null
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "ST London Free gift on order above 4999",
+                "targets": [
+                  { "cartLine": { "id": "gid://shopify/CartLine/gift1", "quantity": 1 } }
+                ],
+                "value": { "percentage": { "value": 100 } }
+              },
+              {
+                "message": "get free gift on 8000",
+                "targets": [
+                  { "cartLine": { "id": "gid://shopify/CartLine/gift2", "quantity": 1 } }
+                ],
+                "value": { "percentage": { "value": 100 } }
+              },
+              {
+                "message": "Buy from klean Beauty and get 1 free",
+                "targets": [
+                  { "cartLine": { "id": "gid://shopify/CartLine/gift3", "quantity": 1 } }
+                ],
+                "value": { "percentage": { "value": 100 } }
+              }
+            ],
+            "selectionStrategy": "ALL"
+          }
+        }
+      ]
+    }
+  }
+}

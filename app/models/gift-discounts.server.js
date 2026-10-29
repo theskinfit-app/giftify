@@ -328,7 +328,20 @@ function functionConfig(tiers) {
   });
 }
 
-function discountInput(tiers) {
+/**
+ * The discount itself. Deliberately carries NO metafields.
+ *
+ * Shopify's own tutorial sends the configuration inside this input, but it sends a
+ * metafield `id` alongside namespace and key when UPDATING an existing discount. We
+ * never had that id, so every update after the first silently failed to attach
+ * anything — the mutation reported success and the function kept receiving null for
+ * its configuration, on every store, forever. The gift was added, never discounted,
+ * and pulled back out.
+ *
+ * writeDiscountConfig uses metafieldsSet instead, which upserts on
+ * (owner, namespace, key) and needs no id, so create and update behave identically.
+ */
+function discountInput() {
   return {
     title: DISCOUNT_TITLE,
     functionHandle: FUNCTION_HANDLE,
@@ -337,18 +350,42 @@ function discountInput(tiers) {
     // A gift must still be free when the customer is already using another
     // promotion, so opt into combining with every class.
     combinesWith: { orderDiscounts: true, productDiscounts: true, shippingDiscounts: true },
-    metafields: [
-      {
-        namespace: FN_CONFIG_NAMESPACE,
-        key: FN_CONFIG_KEY,
-        type: "json",
-        value: functionConfig(tiers),
-      },
-    ],
   };
 }
 
-async function createDiscount(admin, tiers) {
+/** Upsert the tier configuration onto the discount the function reads it from. */
+async function writeDiscountConfig(admin, discountId, tiers) {
+  const d = await gql(
+    admin,
+    `#graphql
+    mutation SetGiftConfig($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields { namespace key }
+        userErrors { field message }
+      }
+    }`,
+    {
+      metafields: [
+        {
+          ownerId: discountId,
+          namespace: FN_CONFIG_NAMESPACE,
+          key: FN_CONFIG_KEY,
+          type: "json",
+          value: functionConfig(tiers),
+        },
+      ],
+    },
+  );
+  const errs = d.metafieldsSet.userErrors;
+  if (errs.length) {
+    throw new Error(
+      "The gift configuration could not be attached to the discount: " +
+        errs.map((e) => e.message).join("; "),
+    );
+  }
+}
+
+async function createDiscount(admin) {
   const d = await gql(
     admin,
     `#graphql
@@ -358,7 +395,7 @@ async function createDiscount(admin, tiers) {
         userErrors { field message }
       }
     }`,
-    { automaticAppDiscount: discountInput(tiers) },
+    { automaticAppDiscount: discountInput() },
   );
   const errs = d.discountAutomaticAppCreate.userErrors;
   if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
@@ -367,7 +404,7 @@ async function createDiscount(admin, tiers) {
   return id;
 }
 
-async function updateDiscount(admin, id, tiers) {
+async function updateDiscount(admin, id) {
   const d = await gql(
     admin,
     `#graphql
@@ -376,7 +413,7 @@ async function updateDiscount(admin, id, tiers) {
         userErrors { field message }
       }
     }`,
-    { id, automaticAppDiscount: discountInput(tiers) },
+    { id, automaticAppDiscount: discountInput() },
   );
   const errs = d.discountAutomaticAppUpdate.userErrors;
   if (errs.length) throw new Error(errs.map((e) => e.message).join("; "));
@@ -420,15 +457,19 @@ async function syncDiscount(admin, tiers) {
   let id = storedId;
 
   if (!id) {
-    id = await createDiscount(admin, tiers);
+    id = await createDiscount(admin);
   } else {
     try {
-      await updateDiscount(admin, id, tiers);
+      await updateDiscount(admin, id);
     } catch (e) {
       if (!isMissingDiscount(e)) throw e;
-      id = await createDiscount(admin, tiers);
+      id = await createDiscount(admin);
     }
   }
+
+  // Always after the discount exists, and always separately from it. This is the
+  // step that was quietly doing nothing.
+  await writeDiscountConfig(admin, id, tiers);
 
   if (!(await discountConfigIsReadable(admin, id))) {
     throw new Error(

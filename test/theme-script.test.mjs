@@ -86,6 +86,53 @@ suite("qualifies(): threshold floor, optional cap, collection item count");
 }
 
 // ---------------------------------------------------------------------------
+// blockTier()/isBlocked() — a block is scoped to one cart AND expires
+// ---------------------------------------------------------------------------
+suite("isBlocked(): scoped to the cart state and time-limited");
+{
+  const build = (seed = {}) => {
+    const store = {};
+    const sessionStorage = {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = v; },
+    };
+    const blocked = seed;
+    const fns = new Function(
+      "blocked",
+      "sessionStorage",
+      "BLOCK_KEY",
+      "BLOCK_TTL_MS",
+      lift("blockTier", "id, cartFingerprint") +
+        "\n" +
+        lift("isBlocked", "id, cartFingerprint") +
+        "\nreturn { blockTier: blockTier, isBlocked: isBlocked };",
+    )(blocked, sessionStorage, "free_gift_blocked", 60000);
+    return fns;
+  };
+
+  const CART = "111:1|222:2";
+
+  let { blockTier, isBlocked } = build();
+  blockTier("t1", CART);
+  check(isBlocked("t1", CART) === true, "a tier just blocked is blocked for that cart");
+  check(isBlocked("t1", "999:1") === false, "the same tier is free on a different cart");
+  check(isBlocked("never", CART) === false, "a tier that was never blocked is not blocked");
+
+  // Expiry: an entry whose life has already run out must let the tier through, so a
+  // transient fault does not leave the shopper with an empty cart indefinitely.
+  ({ isBlocked } = build({ t1: { fingerprint: CART, until: Date.now() - 1 } }));
+  check(isBlocked("t1", CART) === false, "an expired block no longer blocks");
+
+  ({ isBlocked } = build({ t1: { fingerprint: CART, until: Date.now() + 60000 } }));
+  check(isBlocked("t1", CART) === true, "an unexpired block still blocks");
+
+  // Entries written before blocks had an expiry were a bare fingerprint string.
+  ({ isBlocked } = build({ t1: CART }));
+  check(isBlocked("t1", CART) === true, "a legacy string entry still blocks its own cart");
+  check(isBlocked("t1", "999:1") === false, "a legacy string entry ignores other carts");
+}
+
+// ---------------------------------------------------------------------------
 // onCartPage() — the only place a stale cart justifies reloading under the customer
 // ---------------------------------------------------------------------------
 suite("onCartPage(): true only on the real cart route");

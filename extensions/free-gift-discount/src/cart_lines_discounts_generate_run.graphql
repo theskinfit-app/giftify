@@ -1,4 +1,10 @@
-query CartInput {
+# $collectionIds comes from the discount's $app/function-variables metafield, named
+# by input_variables in shopify.extension.toml. The argument it feeds is [ID!]!, so
+# the variable carries its own default: if that metafield is ever missing the query
+# still runs with an empty list, collection tiers simply match nothing, and the
+# order-subtotal tiers keep paying out. Declaring it nullable instead would leave the
+# behaviour to the server's discretion on the one path we can least afford to guess.
+query CartInput($collectionIds: [ID!]! = []) {
   presentmentCurrencyRate
   cart {
     lines {
@@ -17,6 +23,10 @@ query CartInput {
         ... on ProductVariant {
           product {
             id
+            inCollections(ids: $collectionIds) {
+              collectionId
+              isMember
+            }
           }
         }
       }
@@ -24,12 +34,6 @@ query CartInput {
   }
   discount {
     discountClasses
-    # Two reads on purpose. "$app" is the correct reserved namespace and the one the
-    # app writes today. "app" is where a silent fallback in an earlier version of
-    # upsertTier landed the configuration — a plain, unreserved namespace that
-    # nothing ever read, which made the function return no discounts at all while
-    # every other part of the app looked healthy. Reading both repairs those stores
-    # without the merchant having to touch anything.
     appConfig: metafield(namespace: "$app", key: "function-configuration") {
       jsonValue
     }

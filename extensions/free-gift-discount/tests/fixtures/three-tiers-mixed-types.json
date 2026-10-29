@@ -9,67 +9,171 @@
           {
             "id": "gid://shopify/CartLine/own1",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "5730.0" } },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "5730.0"
+              }
+            },
             "giftTier": null,
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/COLL_A1" }
+              "product": {
+                "id": "gid://shopify/Product/COLL_A1",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_sub",
+                    "isMember": true
+                  },
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_has",
+                    "isMember": false
+                  }
+                ]
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/own2",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "3838.0" } },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "3838.0"
+              }
+            },
             "giftTier": null,
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/COLL_A2" }
+              "product": {
+                "id": "gid://shopify/Product/COLL_A2",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_sub",
+                    "isMember": true
+                  },
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_has",
+                    "isMember": false
+                  }
+                ]
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/own3",
             "quantity": 2,
-            "cost": { "subtotalAmount": { "amount": "2750.0" } },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "2750.0"
+              }
+            },
             "giftTier": null,
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/COLL_B1" }
+              "product": {
+                "id": "gid://shopify/Product/COLL_B1",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_sub",
+                    "isMember": false
+                  },
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_has",
+                    "isMember": true
+                  }
+                ]
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/gift1",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "900.0" } },
-            "giftTier": { "value": "t_coll_sub" },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "900.0"
+              }
+            },
+            "giftTier": {
+              "value": "t_coll_sub"
+            },
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/GIFT1" }
+              "product": {
+                "id": "gid://shopify/Product/GIFT1",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_sub",
+                    "isMember": false
+                  },
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_has",
+                    "isMember": false
+                  }
+                ]
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/gift2",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "1200.0" } },
-            "giftTier": { "value": "t_order" },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "1200.0"
+              }
+            },
+            "giftTier": {
+              "value": "t_order"
+            },
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/GIFT2" }
+              "product": {
+                "id": "gid://shopify/Product/GIFT2",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_sub",
+                    "isMember": false
+                  },
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_has",
+                    "isMember": false
+                  }
+                ]
+              }
             }
           },
           {
             "id": "gid://shopify/CartLine/gift3",
             "quantity": 1,
-            "cost": { "subtotalAmount": { "amount": "450.0" } },
-            "giftTier": { "value": "t_coll_has" },
+            "cost": {
+              "subtotalAmount": {
+                "amount": "450.0"
+              }
+            },
+            "giftTier": {
+              "value": "t_coll_has"
+            },
             "merchandise": {
               "__typename": "ProductVariant",
-              "product": { "id": "gid://shopify/Product/GIFT3" }
+              "product": {
+                "id": "gid://shopify/Product/GIFT3",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_sub",
+                    "isMember": false
+                  },
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll_has",
+                    "isMember": false
+                  }
+                ]
+              }
             }
           }
         ]
       },
       "discount": {
-        "discountClasses": ["PRODUCT"],
+        "discountClasses": [
+          "PRODUCT"
+        ],
         "appConfig": {
           "jsonValue": {
             "tiers": [
@@ -81,10 +185,7 @@
                 "thresholdMax": null,
                 "minQuantity": 1,
                 "enabled": true,
-                "collectionProductGids": [
-                  "gid://shopify/Product/COLL_A1",
-                  "gid://shopify/Product/COLL_A2"
-                ]
+                "collectionGid": "gid://shopify/Collection/t_coll_sub"
               },
               {
                 "id": "t_order",
@@ -103,7 +204,7 @@
                 "thresholdMax": null,
                 "minQuantity": 1,
                 "enabled": true,
-                "collectionProductGids": ["gid://shopify/Product/COLL_B1"]
+                "collectionGid": "gid://shopify/Collection/t_coll_has"
               }
             ]
           }
@@ -119,23 +220,50 @@
               {
                 "message": "ST London Free gift on order above 4999",
                 "targets": [
-                  { "cartLine": { "id": "gid://shopify/CartLine/gift1", "quantity": 1 } }
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/gift1",
+                      "quantity": 1
+                    }
+                  }
                 ],
-                "value": { "percentage": { "value": 100 } }
+                "value": {
+                  "percentage": {
+                    "value": 100
+                  }
+                }
               },
               {
                 "message": "get free gift on 8000",
                 "targets": [
-                  { "cartLine": { "id": "gid://shopify/CartLine/gift2", "quantity": 1 } }
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/gift2",
+                      "quantity": 1
+                    }
+                  }
                 ],
-                "value": { "percentage": { "value": 100 } }
+                "value": {
+                  "percentage": {
+                    "value": 100
+                  }
+                }
               },
               {
                 "message": "Buy from klean Beauty and get 1 free",
                 "targets": [
-                  { "cartLine": { "id": "gid://shopify/CartLine/gift3", "quantity": 1 } }
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/gift3",
+                      "quantity": 1
+                    }
+                  }
                 ],
-                "value": { "percentage": { "value": 100 } }
+                "value": {
+                  "percentage": {
+                    "value": 100
+                  }
+                }
               }
             ],
             "selectionStrategy": "ALL"

@@ -223,6 +223,18 @@
     if (tier.type === "order_subtotal") {
       return money(lines.reduce(function (s, l) { return s + lineValue(l); }, 0));
     }
+    // Collection membership from a list of product ids cached when the tier was
+    // saved. This is the one place the theme and the discount function answer the
+    // same question differently: the function asks Shopify live, through
+    // `inCollections`, because a function's input drops any metafield over 10,000
+    // bytes and a list like this blows that at roughly 500 products. A storefront
+    // has no equivalent API — /cart.js gives a product id and nothing else — so the
+    // cached list stays here, and the shop metafield's 128KB is what bounds it.
+    //
+    // The two can therefore disagree, but only after a merchant edits the collection
+    // without re-saving the tier, and only in a direction the safety net already
+    // covers: the theme adds a gift, the function declines to discount it, and
+    // dropPayableGifts pulls it back out.
     var ids = tier.collectionProductIds || [];
     var inColl = lines.filter(function (l) { return ids.indexOf(l.product_id) !== -1; });
     if (tier.type === "collection_contains") {

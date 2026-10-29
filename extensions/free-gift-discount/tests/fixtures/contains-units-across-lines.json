@@ -18,7 +18,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/COLL_A"
+                "id": "gid://shopify/Product/COLL_A",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_contains2",
+                    "isMember": true
+                  }
+                ]
               }
             }
           },
@@ -34,7 +40,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/COLL_B"
+                "id": "gid://shopify/Product/COLL_B",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_contains2",
+                    "isMember": true
+                  }
+                ]
               }
             }
           },
@@ -50,7 +62,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/PLAIN"
+                "id": "gid://shopify/Product/PLAIN",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_contains2",
+                    "isMember": false
+                  }
+                ]
               }
             }
           },
@@ -68,7 +86,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/GIFT1"
+                "id": "gid://shopify/Product/GIFT1",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_contains2",
+                    "isMember": false
+                  }
+                ]
               }
             }
           }
@@ -89,10 +113,7 @@
                 "thresholdMax": null,
                 "minQuantity": 2,
                 "enabled": true,
-                "collectionProductGids": [
-                  "gid://shopify/Product/COLL_A",
-                  "gid://shopify/Product/COLL_B"
-                ]
+                "collectionGid": "gid://shopify/Collection/t_contains2"
               }
             ]
           }

@@ -78,14 +78,68 @@ export function cartLinesDiscountsGenerateRun(input) {
     ownLines.reduce((sum, line) => sum + amountOf(line), 0),
   );
 
-  // Collection membership comes from product ids in the config, not from
-  // `inAnyCollection`: that field needs its collection ids baked into the input
-  // query at deploy time, and they differ per shop and per tier.
-  //
-  // Accepts both shapes on purpose. Tiers saved before this function existed only
-  // cached numeric ids for the theme, so reading GIDs alone would silently make
-  // every pre-existing collection tier stop qualifying.
-  const collectionMembers = (tier) => {
+  /**
+   * Which of the configured collections a line's product belongs to, as Shopify
+   * itself reports it.
+   *
+   * This used to be answered from a list of every product id in the collection,
+   * carried in the configuration metafield. That is what broke the app in
+   * production: a metafield over 10,000 bytes is silently omitted from a function's
+   * input, and a collection of ~500 products is already past that. The function then
+   * saw null for its entire configuration — every tier, not just the collection one —
+   * and discounted nothing. Nothing upstream looked wrong, because the Admin API
+   * returns the same metafield without complaint.
+   *
+   * `inCollections` moves the question to where the answer already lives. The
+   * configuration now carries one collection id per tier instead of thousands of
+   * product ids, so its size no longer depends on how big the merchant's collections
+   * are.
+   */
+  const membershipsOf = (line) =>
+    line.merchandise.__typename === 'ProductVariant'
+      ? (line.merchandise.product.inCollections ?? [])
+      : [];
+
+  const collectionsOf = (line) => {
+    const ids = new Set();
+    for (const membership of membershipsOf(line)) {
+      if (membership.isMember) ids.add(membership.collectionId);
+    }
+    return ids;
+  };
+
+  /**
+   * Which collections Shopify was actually ASKED about — every requested id comes back
+   * on every variant line, member or not, so an id missing from here means it was
+   * never in $collectionIds.
+   *
+   * This is the difference between "the product is not in that collection" and "we
+   * have no idea", and the upgrade depends on telling them apart. $collectionIds is
+   * fed by a metafield the admin only writes when a tier is saved, so on a store that
+   * installed the new function but has not re-saved, the list is empty and every
+   * lookup would answer "not a member" — silently switching off every collection tier
+   * that was working a minute earlier. Falling back to the cached ids in that case
+   * keeps those tiers running until the merchant's next save.
+   *
+   * The obvious shortcut — fall back whenever the live lookup matches no lines — is
+   * wrong, because "no lines matched" is the correct answer most of the time, and
+   * taking the stale cache there resurrects a product the merchant has since removed
+   * from the collection. Two fixtures hold this line: upgrade-before-tier-resaved
+   * fails if the fallback goes away, live-membership-overrides-stale-cache fails if
+   * it becomes that shortcut. Neither one catches both mistakes alone.
+   */
+  const askedAbout = new Set();
+  for (const line of input.cart.lines) {
+    for (const membership of membershipsOf(line)) askedAbout.add(membership.collectionId);
+  }
+
+  /**
+   * Product ids from a configuration written before the change above. Those configs
+   * only survive at all when the collection was small enough to stay under the
+   * limit, but a merchant who has not re-saved a tier should keep working until
+   * they do.
+   */
+  const legacyMembers = (tier) => {
     const members = new Set(
       Array.isArray(tier.collectionProductGids) ? tier.collectionProductGids : [],
     );
@@ -98,7 +152,10 @@ export function cartLinesDiscountsGenerateRun(input) {
   };
 
   const linesInCollection = (tier) => {
-    const members = collectionMembers(tier);
+    if (tier.collectionGid && askedAbout.has(tier.collectionGid)) {
+      return ownLines.filter((line) => collectionsOf(line).has(tier.collectionGid));
+    }
+    const members = legacyMembers(tier);
     if (!members.size) return [];
     return ownLines.filter((line) => {
       const productId = productIdOf(line);

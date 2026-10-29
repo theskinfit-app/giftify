@@ -18,7 +18,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/COLL_A"
+                "id": "gid://shopify/Product/COLL_A",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_contains2",
+                    "isMember": true
+                  }
+                ]
               }
             }
           },
@@ -36,7 +42,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/GIFT1"
+                "id": "gid://shopify/Product/GIFT1",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_contains2",
+                    "isMember": false
+                  }
+                ]
               }
             }
           }
@@ -57,9 +69,7 @@
                 "thresholdMax": null,
                 "minQuantity": 2,
                 "enabled": true,
-                "collectionProductGids": [
-                  "gid://shopify/Product/COLL_A"
-                ]
+                "collectionGid": "gid://shopify/Collection/t_contains2"
               }
             ]
           }

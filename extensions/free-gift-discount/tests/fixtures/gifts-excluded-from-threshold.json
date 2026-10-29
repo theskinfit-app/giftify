@@ -17,7 +17,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/PLAIN"
+                "id": "gid://shopify/Product/PLAIN",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll5k",
+                    "isMember": false
+                  }
+                ]
               }
             },
             "quantity": 1
@@ -35,7 +41,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/Ggc"
+                "id": "gid://shopify/Product/Ggc",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll5k",
+                    "isMember": false
+                  }
+                ]
               }
             },
             "quantity": 1
@@ -69,9 +81,7 @@
                 "type": "collection_subtotal",
                 "threshold": 5000,
                 "enabled": true,
-                "collectionProductGids": [
-                  "gid://shopify/Product/COLL_A"
-                ]
+                "collectionGid": "gid://shopify/Collection/t_coll5k"
               }
             ]
           }

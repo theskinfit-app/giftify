@@ -60,6 +60,8 @@ const DISCOUNT_TITLE = "Free Gift";
 // gets an error, because a configuration nothing can read is worse than no save at
 // all. writeDiscountConfig reads the value back to make sure of it.
 const FN_CONFIG_KEY = "function-configuration";
+// Must match `input_variables` in extensions/free-gift-discount/shopify.extension.toml.
+const FN_VARIABLES_KEY = "function-variables";
 const FN_CONFIG_NAMESPACE = "$app";
 
 const numId = (gid) => (gid ? Number(String(gid).split("/").pop()) : null);
@@ -149,10 +151,11 @@ const METAFIELD_SAFE_BYTES = Math.floor(METAFIELD_LIMIT_BYTES * 0.8);
 /**
  * Refuse to save a tier list that will not fit, and say why.
  *
- * Collection tiers cache every product id in the collection, so a big collection
- * blows the metafield limit. Until that design changes this is a real ceiling, and a
- * merchant is owed a clear sentence about it rather than a save that appears to work
- * and a gift that never appears.
+ * Collection tiers cache every product id in the collection for the theme script, so
+ * enough collection tiers still blow the metafield limit. This is the only place that
+ * ceiling still exists — the discount function stopped reading these lists and asks
+ * Shopify for membership instead — but a merchant is owed a clear sentence about it
+ * rather than a save that appears to work and a gift that never appears.
  */
 function assertTiersFit(tiers, json) {
   const bytes = Buffer.byteLength(json, "utf8");
@@ -169,8 +172,8 @@ function assertTiersFit(tiers, json) {
   throw new Error(
     `This tier can't be saved: the configuration is ${Math.round(bytes / 1024)}KB and ` +
       `Shopify allows ${Math.round(METAFIELD_LIMIT_BYTES / 1024)}KB. ${which}` +
-      "Collection tiers currently support collections of roughly 1,500 products or " +
-      "fewer in total. Use a smaller collection for now.",
+      "Across all collection tiers together, roughly 6,000 products fit. Use a " +
+      "smaller collection, or delete a collection tier you no longer need.",
   );
 }
 
@@ -221,7 +224,14 @@ export async function getShopCurrency(admin) {
 // Helpers
 // ---------------------------------------------------------------------------
 /**
- * Collection members in both shapes: numeric ids for the theme, GIDs for the function.
+ * The collection's product ids, numeric, for the theme script.
+ *
+ * The function used to need these too, as GIDs, and that is what broke the app in
+ * production: the configuration metafield grew with the collection, and a function's
+ * input silently omits any metafield over 10,000 bytes. The function now asks Shopify
+ * directly with `inCollections`, so it needs one collection id and nothing more. Only
+ * the theme still needs a list, because a storefront has no equivalent API — all it
+ * gets from /cart.js is a product id.
  *
  * Every exit from this function used to be silent. A collection that came back null,
  * one with more products than the paging loop covers, even an empty one — all of them
@@ -231,6 +241,7 @@ export async function getShopCurrency(admin) {
  */
 const COLLECTION_PAGES = 20;
 const COLLECTION_PAGE_SIZE = 250;
+const COLLECTION_CEILING = COLLECTION_PAGES * COLLECTION_PAGE_SIZE;
 
 async function cacheCollectionProducts(admin, collectionGid) {
   const gids = [];
@@ -265,12 +276,13 @@ async function cacheCollectionProducts(admin, collectionGid) {
   }
 
   if (more) {
-    // The binding limit in practice is the metafield size, which assertTiersFit
-    // reports — quote the same number here so the two don't give different advice.
+    // One collection of this size still fits the shop metafield comfortably; several
+    // do not, which is the total that assertTiersFit polices. The two limits are
+    // different questions, so they are allowed to quote different numbers.
     throw new Error(
-      `That collection has more than ${(COLLECTION_PAGES * COLLECTION_PAGE_SIZE).toLocaleString()} ` +
-        "products. Collection tiers currently support collections of roughly 1,500 " +
-        "products or fewer. Use a smaller collection for now.",
+      `That collection has more than ${COLLECTION_CEILING.toLocaleString()} products, ` +
+        "which is more than the storefront script can carry. Use a smaller collection, " +
+        "or split the tier across two collections.",
     );
   }
 
@@ -281,7 +293,7 @@ async function cacheCollectionProducts(admin, collectionGid) {
     );
   }
 
-  return { gids, ids: gids.map(numId) };
+  return gids.map(numId);
 }
 
 /**
@@ -310,7 +322,20 @@ async function giftDetails(admin, giftProductGid) {
 // ---------------------------------------------------------------------------
 // The single app discount
 // ---------------------------------------------------------------------------
-/** Only what the function actually needs — the metafield has a size limit. */
+/**
+ * Only what the function actually needs, and deliberately nothing that grows with
+ * the merchant's catalogue.
+ *
+ * A metafield larger than 10,000 bytes is silently omitted from a Shopify Function's
+ * input — no error, and the Admin API keeps returning it as if all were well. This
+ * used to carry every product id in each tier's collection, so a collection of about
+ * 500 products pushed the whole configuration past the limit and the function saw
+ * null for ALL tiers. That is why gifts were added and immediately taken back out,
+ * and why it came and went depending on which tiers were enabled.
+ *
+ * It now carries the COLLECTION id. The function asks Shopify whether a cart line is
+ * in it, so this payload stays a few hundred bytes whatever the collection holds.
+ */
 function functionConfig(tiers) {
   return JSON.stringify({
     tiers: tiers
@@ -323,9 +348,28 @@ function functionConfig(tiers) {
         thresholdMax: t.thresholdMax ?? null,
         minQuantity: t.minQuantity ?? 1,
         enabled: true,
-        collectionProductGids: t.collectionProductGids ?? [],
+        collectionGid: t.collectionGid ?? null,
       })),
   });
+}
+
+// `inCollections(ids:)` is fed from this metafield. Shopify rejects a list variable
+// of more than 100 elements, which is one collection per tier.
+const MAX_COLLECTION_VARIABLES = 100;
+
+function functionVariables(tiers) {
+  const collectionIds = [
+    ...new Set(
+      tiers.filter((t) => t.enabled !== false && t.collectionGid).map((t) => t.collectionGid),
+    ),
+  ];
+  if (collectionIds.length > MAX_COLLECTION_VARIABLES) {
+    throw new Error(
+      `This app supports up to ${MAX_COLLECTION_VARIABLES} collection-based tiers at ` +
+        `once, and there are now ${collectionIds.length}. Pause or delete a few.`,
+    );
+  }
+  return JSON.stringify({ collectionIds });
 }
 
 /**
@@ -353,7 +397,10 @@ function discountInput() {
   };
 }
 
-/** Upsert the tier configuration onto the discount the function reads it from. */
+/**
+ * Upsert both metafields the function reads: the tier configuration, and the
+ * collection ids that feed $collectionIds into its input query.
+ */
 async function writeDiscountConfig(admin, discountId, tiers) {
   const d = await gql(
     admin,
@@ -373,6 +420,13 @@ async function writeDiscountConfig(admin, discountId, tiers) {
           type: "json",
           value: functionConfig(tiers),
         },
+        {
+          ownerId: discountId,
+          namespace: FN_CONFIG_NAMESPACE,
+          key: FN_VARIABLES_KEY,
+          type: "json",
+          value: functionVariables(tiers),
+        },
       ],
     },
   );
@@ -383,6 +437,38 @@ async function writeDiscountConfig(admin, discountId, tiers) {
         errs.map((e) => e.message).join("; "),
     );
   }
+}
+
+/**
+ * The function cannot see a metafield larger than this, and says nothing when that
+ * happens. Checking here is the only way the merchant finds out before their
+ * customers do.
+ */
+const FUNCTION_METAFIELD_LIMIT_BYTES = 10000;
+
+/**
+ * Refuse to write a configuration the function would not be able to read.
+ *
+ * Shopify omits a metafield over 10,000 bytes from a function's input, silently and
+ * with no error anywhere: the Admin API keeps returning it, the discount keeps
+ * looking healthy, and the function just sees null for its whole configuration and
+ * discounts nothing. That is what took the live app down, so this is a hard stop,
+ * not a warning.
+ *
+ * Since the collection product lists left the configuration, the only thing that
+ * grows here is the number of tiers and the length of their names — a few hundred
+ * bytes each, so a merchant has to be well into the dozens before this fires.
+ */
+function assertConfigFitsFunctionInput(tiers) {
+  const json = functionConfig(tiers);
+  const bytes = Buffer.byteLength(json, "utf8");
+  if (bytes <= FUNCTION_METAFIELD_LIMIT_BYTES * 0.8) return;
+  const active = tiers.filter((t) => t.enabled !== false).length;
+  throw new Error(
+    `The gift configuration is ${bytes} bytes and a Shopify Function cannot read ` +
+      `more than ${FUNCTION_METAFIELD_LIMIT_BYTES}. There are ${active} active tiers; ` +
+      "pause or delete a few, or shorten their names.",
+  );
 }
 
 async function createDiscount(admin) {
@@ -469,6 +555,7 @@ async function syncDiscount(admin, tiers) {
 
   // Always after the discount exists, and always separately from it. This is the
   // step that was quietly doing nothing.
+  assertConfigFitsFunctionInput(tiers);
   await writeDiscountConfig(admin, id, tiers);
 
   if (!(await discountConfigIsReadable(admin, id))) {
@@ -517,8 +604,9 @@ export async function upsertTier(admin, form) {
     minQuantity: form.type === "collection_contains" ? minQuantityOrOne(form.minQuantity) : 1,
     collectionGid: form.collectionGid || null,
     collectionId: numId(form.collectionGid),
-    collectionProductIds: [],  // numeric, for the theme
-    collectionProductGids: [], // GIDs, for the function
+    // Numeric ids, for the theme script only. The function resolves membership
+    // through `inCollections` and never reads this.
+    collectionProductIds: [],
     giftProductGid: form.giftProductGid,
     giftProductId: numId(form.giftProductGid),
     giftVariantGid: null,
@@ -530,9 +618,7 @@ export async function upsertTier(admin, form) {
   };
 
   if (tier.type !== "order_subtotal" && tier.collectionGid) {
-    const members = await cacheCollectionProducts(admin, tier.collectionGid);
-    tier.collectionProductIds = members.ids;
-    tier.collectionProductGids = members.gids;
+    tier.collectionProductIds = await cacheCollectionProducts(admin, tier.collectionGid);
   }
   const gift = await giftDetails(admin, tier.giftProductGid);
   tier.giftProductTitle = gift.title;
@@ -553,13 +639,18 @@ export async function upsertTier(admin, form) {
   // the tier before the theme starts handing its gift out.
   await syncDiscount(admin, tiers);
 
-  // Drop the legacy per-tier discount pointer as the list is rewritten.
+  // Strip fields earlier designs left behind, for every tier and not just the one
+  // being saved. collectionProductGids is the expensive one: it doubled the size of
+  // a collection tier and nothing reads it any more, so one save of any tier shrinks
+  // the whole metafield. The numeric ids it duplicated stay, and the discount
+  // function's legacy path reads those, so an old tier keeps working untouched.
   await persistTiers(
     admin,
     tiers.map((t) => {
       const copy = { ...t };
       delete copy.discountNodeId;
       delete copy.giftVariantPrice; // left over from the zero-priced variant design
+      delete copy.collectionProductGids;
       return copy;
     }),
   );

@@ -18,7 +18,8 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/PLAIN"
+                "id": "gid://shopify/Product/PLAIN",
+                "inCollections": []
               }
             }
           },
@@ -36,7 +37,8 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/GIFT1"
+                "id": "gid://shopify/Product/GIFT1",
+                "inCollections": []
               }
             }
           }

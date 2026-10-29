@@ -11,9 +11,22 @@ description = "t:description"
   # cart.delivery-options.discounts.generate.run, whose sample code hands out FREE
   # DELIVERY — this app has no business touching shipping, and declaring the
   # target would give the discount the SHIPPING class as well. Removed on purpose.
+  # input_variables feeds $collectionIds into the input query from a metafield on the
+  # discount, so collection membership is answered by Shopify at runtime instead of
+  # us shipping a list of every product id.
+  #
+  # That list is what broke this app in production. A metafield over 10,000 bytes is
+  # silently dropped from a function's input — the Admin API still returns it, so
+  # nothing upstream looks wrong — and a collection of about 500 products already
+  # exceeds it. The function then saw null configuration and discounted nothing,
+  # intermittently, depending on which tiers were enabled.
+  #
+  # Requires Shopify CLI 4.9.0 or newer, which is why it is pinned in package.json.
+  # Deploy fails if the query declares variables and this is missing, or vice versa.
   [[extensions.targeting]]
   target = "cart.lines.discounts.generate.run"
   input_query = "src/cart_lines_discounts_generate_run.graphql"
+  input_variables = { namespace = "$app", key = "function-variables" }
   export = "cart-lines-discounts-generate-run"
 
   [extensions.build]

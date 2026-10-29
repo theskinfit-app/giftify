@@ -17,7 +17,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/8495381020742"
+                "id": "gid://shopify/Product/8495381020742",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll",
+                    "isMember": true
+                  }
+                ]
               }
             },
             "quantity": 1
@@ -35,7 +41,13 @@
             "merchandise": {
               "__typename": "ProductVariant",
               "product": {
-                "id": "gid://shopify/Product/GIFT"
+                "id": "gid://shopify/Product/GIFT",
+                "inCollections": [
+                  {
+                    "collectionId": "gid://shopify/Collection/t_coll",
+                    "isMember": false
+                  }
+                ]
               }
             },
             "quantity": 1
